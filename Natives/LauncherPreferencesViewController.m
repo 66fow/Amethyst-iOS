@@ -187,12 +187,6 @@
                   return [CAMetalLayer instancesRespondToSelector:@selector(developerHUDProperties)];
               }
             },
-            @{@"key": @"vsync",
-              @"hasDetail": @YES,
-              @"icon": @"display",
-              @"type": self.typeSwitch,
-              @"enableCondition": whenNotInGame
-            },
             @{@"key": @"mobilegl_fast_shader_load",
               @"hasDetail": @YES,
               @"icon": @"hare",

@@ -1,6 +1,5 @@
 #import <Foundation/Foundation.h>
 #import <QuartzCore/QuartzCore.h>
-#import "LauncherPreferences.h"
 #import "SurfaceViewController.h"
 
 #include <dlfcn.h>
@@ -213,8 +212,6 @@ void gl_swap_buffers() {
 }
 
 void gl_swap_interval(int swapInterval) {
-    // only MobileGL turns this into a present mode, so only it gets the launcher override
-    if (gl_is_mobilegl_renderer() && !getPrefBool(@"video.vsync")) swapInterval = 0;
     handle.eglSwapInterval(g_EglDisplay, swapInterval);
 }
 
