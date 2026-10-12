@@ -77,11 +77,11 @@ static bool gl_init() {
 
     g_EglDisplay = handle.eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (g_EglDisplay == EGL_NO_DISPLAY) {
-        NSDebugLog(@"EGLBridge: eglGetDisplay(EGL_DEFAULT_DISPLAY) returned EGL_NO_DISPLAY");
+        NSLog(@"EGLBridge: eglGetDisplay(EGL_DEFAULT_DISPLAY) returned EGL_NO_DISPLAY");
         return false;
     }
     if (!handle.eglInitialize(g_EglDisplay, NULL, NULL)) {
-        NSDebugLog(@"EGLBridge: Error eglInitialize() failed: 0x%x", handle.eglGetError());
+        NSLog(@"EGLBridge: Error eglInitialize() failed: 0x%x", handle.eglGetError());
         return false;
     }
     return true;
@@ -110,7 +110,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     EGLint num_configs;
     EGLint vid;
     if (!handle.eglChooseConfig(g_EglDisplay, attribs, &bundle->config, 1, &num_configs)) {
-        NSDebugLog(@"EGLBridge: Error couldn't get an EGL visual config: 0x%x", handle.eglGetError());
+        NSLog(@"EGLBridge: Error couldn't get an EGL visual config: 0x%x", handle.eglGetError());
         free(bundle);
         return NULL;
     }
@@ -118,7 +118,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     assert(num_configs > 0);
 
     if (!handle.eglGetConfigAttrib(g_EglDisplay, bundle->config, EGL_NATIVE_VISUAL_ID, &vid)) {
-        NSDebugLog(@"EGLBridge: Error eglGetConfigAttrib() failed: 0x%x", handle.eglGetError());
+        NSLog(@"EGLBridge: Error eglGetConfigAttrib() failed: 0x%x", handle.eglGetError());
         free(bundle);
         return NULL;
     }
@@ -131,7 +131,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
         NSDebugLog(@"EGLBridge: Binding to OpenGL ES");
         bindResult = handle.eglBindAPI(EGL_OPENGL_ES_API);
     }
-    if (!bindResult) NSDebugLog(@"EGLBridge: bind failed: %p\n", handle.eglGetError());
+    if (!bindResult) NSLog(@"EGLBridge: bind failed: 0x%x", handle.eglGetError());
 
     CALayer *layer = SurfaceViewController.surface.layer;
     CGSize drawableSize = layer.bounds.size;
@@ -149,7 +149,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     bundle->surface = handle.eglCreateWindowSurface(g_EglDisplay, bundle->config, (__bridge EGLNativeWindowType)layer,
         mobileGL ? mobileGLSurfaceAttribs : NULL);
     if (!bundle->surface) {
-        NSDebugLog(@"EGLBridge: eglCreateWindowSurface finished with error: 0x%x", handle.eglGetError());
+        NSLog(@"EGLBridge: eglCreateWindowSurface finished with error: 0x%x", handle.eglGetError());
         free(bundle);
         return NULL;
     }
@@ -174,7 +174,7 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     bundle->context = handle.eglCreateContext(g_EglDisplay, bundle->config, share ? share->context : EGL_NO_CONTEXT,
         mgEgl ? mg_ctx_attribs : (mobileGL ? desktop_ctx_attribs : gles_ctx_attribs));
     if (!bundle->context) {
-        NSDebugLog(@"EGLBridge: Error eglCreateContext finished with error: 0x%x", handle.eglGetError());
+        NSLog(@"EGLBridge: Error eglCreateContext finished with error: 0x%x", handle.eglGetError());
         free(bundle);
         return NULL;
     }
@@ -203,6 +203,7 @@ void gl_swap_buffers() {
     // is active again so eglSwapBuffers (which can trigger Metal command buffer
     // submission) is never called from the background.
     pojavWaitForAppForeground();
+    if (!currentBundle) return;
     if (!handle.eglSwapBuffers(g_EglDisplay, currentBundle->gl.surface) && handle.eglGetError() == EGL_BAD_SURFACE) {
         NSLog(@"eglSwapBuffers error 0x%x", handle.eglGetError());
         //stopSwapBuffers = true;
@@ -216,8 +217,10 @@ void gl_swap_interval(int swapInterval) {
 
 void gl_terminate() {
     handle.eglMakeCurrent(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    handle.eglDestroySurface(g_EglDisplay, currentBundle->gl.surface);
-    handle.eglDestroyContext(g_EglDisplay, currentBundle->gl.context);
+    if (currentBundle) {
+        handle.eglDestroySurface(g_EglDisplay, currentBundle->gl.surface);
+        handle.eglDestroyContext(g_EglDisplay, currentBundle->gl.context);
+    }
     handle.eglTerminate(g_EglDisplay);
     handle.eglReleaseThread();
     free(currentBundle);

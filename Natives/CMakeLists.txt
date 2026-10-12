@@ -165,6 +165,7 @@ add_executable(AngelAuraAmethyst
   MinecraftOptionUtils.m
   MinecraftResourceDownloadTask.m
   MinecraftResourceUtils.m
+  MobileGLConfig.m
   PickTextField.m
   PLLogOutputView.m
   PLPickerView.m

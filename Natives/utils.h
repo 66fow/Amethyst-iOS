@@ -3,6 +3,7 @@
 #import <UIKit/UIKit.h>
 
 #include <stdbool.h>
+#include <string.h>
 #include "environ.h"
 #include "jni.h"
 

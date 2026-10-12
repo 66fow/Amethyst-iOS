@@ -111,6 +111,7 @@ AME_JRE21_DIR       ?= $(SOURCEDIR)/depends/java-21-openjdk
 AME_JRE25_DIR       ?= $(SOURCEDIR)/depends/java-25-openjdk
 MOBILEGL_SOURCE_DIR	?= $(SOURCEDIR)/Natives/external/MobileGL
 MOLTENVK_LIBRARY    ?= $(SOURCEDIR)/Natives/resources/Frameworks/libMoltenVK.dylib
+MOBILEGL_LOG_LEVEL   ?= MOBILEGL_LOG_LEVEL_INFO
 
 # Function to use later for checking dependencies
 METHOD_DEPCHECK   = $(shell $(1) >/dev/null 2>&1 && echo 1)
@@ -355,6 +356,7 @@ dep_mobilegl:
 		-DMOBILEGL_BUILD_BENCHMARK=OFF \
 		-DMOBILEGL_BUILD_TRACE_REPLAY=OFF \
 		-DMOBILEGL_ENABLE_LTO=ON \
+		-DMOBILEGL_LOG_ACTIVE_LEVEL=$(MOBILEGL_LOG_LEVEL) \
 		-DMOBILEGL_VULKAN_LIBRARY="$(MOLTENVK_LIBRARY)" \
 		$(MOBILEGL_SOURCE_DIR)
 

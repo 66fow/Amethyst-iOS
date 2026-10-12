@@ -172,12 +172,33 @@ void TGlslangToSpvTraverser::convertSwizzle(const glslang::TIntermAggregate& nod
     return replace_once(target, old, new, "using component 0", "glslang", required=False)
 
 
+def log_to_stderr(root):
+    old = """            WriteToFile(out.c_str());
+
+            va_end(args);"""
+    new = """#if defined(MOBILEGL_IOS)
+            // warnings and up also go to stderr so they land in latestlog.txt, MOBILEGL_LOG_CONSOLE=1 sends everything
+            static const bool mirrorAll = std::getenv("MOBILEGL_LOG_CONSOLE") != nullptr;
+            static int mirrored = 0;
+            if (mirrorAll || (mirrored < 2000 && (levelTag[0] == 'W' || levelTag[0] == 'E' || levelTag[0] == 'F'))) {
+                mirrored++;
+                std::fputs(out.c_str(), stderr);
+            }
+#endif
+            WriteToFile(out.c_str());
+
+            va_end(args);"""
+    target = root / "MobileGL/MG_Util/Debug/Log.cpp"
+    return replace_once(target, old, new, "MOBILEGL_LOG_CONSOLE", "log_to_stderr", required=False)
+
+
 STEPS = [
     ("ios_visibility", ios_visibility, True),
     ("ios_resolution", ios_resolution, True),
     ("hash_shim", hash_shim, True),
     ("enable_availability", enable_availability, True),
     ("glslang", glslang, False),
+    ("log_to_stderr", log_to_stderr, False),
 ]
 
 

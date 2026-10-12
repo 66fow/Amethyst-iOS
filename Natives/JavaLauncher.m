@@ -20,6 +20,7 @@
 #import "JavaLauncher.h"
 #import "LauncherPreferences.h"
 #import "MinecraftOptionUtils.h"
+#import "MobileGLConfig.h"
 #import "PLLogOutputView.h"
 #import "PLProfiles.h"
 #import "RendererCrashTracker.h"
@@ -337,17 +338,12 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         }
 
         if (isMobileGLRenderer(renderer.UTF8String)) {
-    setenv("MOBILEGL_BACKEND_TYPE", "DirectVulkan", 1);
-    
-    const char *pojavHome = getenv("AME_HOME");
-    if (pojavHome && *pojavHome) {
-        NSString *mobileGLLogPath = [NSString stringWithFormat:@"%s/mobilegl.log", pojavHome];
-        setenv("MOBILEGL_LOG_FILE_PATH", mobileGLLogPath.UTF8String, 1);
-    }
-} else {
-    unsetenv("MOBILEGL_BACKEND_TYPE");
-    unsetenv("MOBILEGL_LOG_FILE_PATH");
-}
+            [MobileGLConfig applyEnvironmentFromPreferences];
+            NSLog(@"[MobileGLConfig] %@", [MobileGLConfig activeConfigSummary]);
+        } else {
+            unsetenv("MOBILEGL_BACKEND_TYPE");
+            unsetenv("MOBILEGL_LOG_FILE_PATH");
+        }
 
         // MobileGlues wants a writable dir for its log/cache, the default one is android's /sdcard
         if (!strcmp(renderer.UTF8String, "libmobileglues.dylib") && getenv("AME_HOME")) {

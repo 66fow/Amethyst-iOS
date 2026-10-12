@@ -187,6 +187,30 @@
                   return [CAMetalLayer instancesRespondToSelector:@selector(developerHUDProperties)];
               }
             },
+            @{@"key": @"mobilegl_low_latency",
+              @"hasDetail": @YES,
+              @"icon": @"bolt",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
+            @{@"key": @"mobilegl_fast_shader_load",
+              @"hasDetail": @YES,
+              @"icon": @"hare",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
+            @{@"key": @"mobilegl_buffer_compat",
+              @"hasDetail": @YES,
+              @"icon": @"square.stack.3d.up",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
+            @{@"key": @"mobilegl_relaxed",
+              @"hasDetail": @YES,
+              @"icon": @"slider.horizontal.3",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
             @{@"key": @"fullscreen_airplay",
               @"hasDetail": @YES,
               @"icon": @"airplayvideo",
