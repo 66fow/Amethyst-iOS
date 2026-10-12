@@ -187,9 +187,9 @@
                   return [CAMetalLayer instancesRespondToSelector:@selector(developerHUDProperties)];
               }
             },
-            @{@"key": @"mobilegl_low_latency",
+            @{@"key": @"vsync",
               @"hasDetail": @YES,
-              @"icon": @"bolt",
+              @"icon": @"display",
               @"type": self.typeSwitch,
               @"enableCondition": whenNotInGame
             },

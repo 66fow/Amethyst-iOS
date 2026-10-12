@@ -6,7 +6,6 @@ extern char **environ;
 // pref, env var, value it gets when the pref is on
 static NSArray<NSArray<NSString *> *> *envTable(void) {
     return @[
-        @[@"video.mobilegl_low_latency", @"MOBILEGL_MAGMA_FRAMESINFLIGHT", @"2"],
         @[@"video.mobilegl_fast_shader_load", @"MOBILEGL_ASYNC_OPTIMISTIC_SHADER_STATUS", @"1"],
         @[@"video.mobilegl_buffer_compat", @"MOBILEGL_COHERENT_AS_FLUSH", @"1"],
         @[@"video.mobilegl_relaxed", @"MOBILEGL_RELAXED_SEMANTICS", @"1"],
