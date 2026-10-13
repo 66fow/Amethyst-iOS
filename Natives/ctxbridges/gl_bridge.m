@@ -9,6 +9,7 @@
 #include "environ.h"
 #include "gl_bridge.h"
 #include "utils.h"
+#include "../renderer_info.h"
 
 static EGLDisplay g_EglDisplay;
 static egl_library handle;
