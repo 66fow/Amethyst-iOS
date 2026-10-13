@@ -115,7 +115,7 @@ static GameSurfaceView* pojavWindow;
     self.ctrlView = [[ControlLayout alloc] initWithFrame:getSafeArea(self.view.frame)];
 
     [self performSelector:@selector(initCategory_Navigation)];
-    
+
     self.surfaceView = [[GameSurfaceView alloc] initWithFrame:self.view.frame];
     self.surfaceView.layer.contentsScale = screenScale;
     self.surfaceView.layer.magnificationFilter = self.surfaceView.layer.minificationFilter = kCAFilterNearest;
@@ -132,7 +132,7 @@ static GameSurfaceView* pojavWindow;
 
     [self performSelector:@selector(setupCategory_Navigation)];
 
-    
+
     UIHoverGestureRecognizer *hoverGesture = [[NSClassFromString(@"UIHoverGestureRecognizer") alloc] initWithTarget:self action:@selector(surfaceOnHover:)];
     [self.touchView addGestureRecognizer:hoverGesture];
 
@@ -160,7 +160,7 @@ static GameSurfaceView* pojavWindow;
     self.longPressGesture.cancelsTouchesInView = NO;
     self.longPressGesture.delegate = self;
     [self.touchView addGestureRecognizer:self.longPressGesture];
-    
+
     self.longPressTwoGesture = [[UILongPressGestureRecognizer alloc]initWithTarget:self action:@selector(keyboardGesture:)];
     self.longPressTwoGesture.numberOfTouchesRequired = 2;
     self.longPressTwoGesture.allowedTouchTypes = @[@(UITouchTypeDirect)];
@@ -228,7 +228,7 @@ static GameSurfaceView* pojavWindow;
     if (GCMouse.current != nil) {
         [self registerMouseCallbacks:GCMouse.current];
     }
-    
+
 
     // TODO: deal with multiple controllers by letting users decide which one to use?
     self.controllerConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
@@ -274,7 +274,45 @@ static GameSurfaceView* pojavWindow;
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self forceLandscape];
     [self setNeedsUpdateOfPrefersPointerLocked];
+}
+
+#pragma mark - Force landscape in game
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskLandscape;
+}
+
+- (BOOL)shouldAutorotate {
+    return YES;
+}
+
+- (UIInterfaceOrientation)preferredInterfaceOrientationForPresentation {
+    return UIInterfaceOrientationLandscapeRight;
+}
+
+- (void)forceLandscape {
+    if (@available(iOS 16.0, *)) {
+        UIWindowScene *scene = self.view.window.windowScene;
+        if (!scene) {
+            for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+                if ([s isKindOfClass:UIWindowScene.class]) {
+                    scene = (UIWindowScene *)s;
+                    break;
+                }
+            }
+        }
+        [self setNeedsUpdateOfSupportedInterfaceOrientations];
+        UIWindowSceneGeometryPreferencesIOS *prefs = [[UIWindowSceneGeometryPreferencesIOS alloc]
+            initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscape];
+        [scene requestGeometryUpdateWithPreferences:prefs errorHandler:^(NSError *error) {
+            NSLog(@"[Orientation] requestGeometryUpdate failed: %@", error);
+        }];
+    } else {
+        [UIDevice.currentDevice setValue:@(UIInterfaceOrientationLandscapeRight) forKey:@"orientation"];
+        [UIViewController attemptRotationToDeviceOrientation];
+    }
 }
 
 - (void)updateAudioSettings {
@@ -447,10 +485,11 @@ static GameSurfaceView* pojavWindow;
         if (minVersion == 0) {
             minVersion = [self.metadata[@"javaVersion"][@"version"] intValue];
         }
+        // The game screen is forced to landscape, so always pass landscape dimensions (width >= height)
         launchJVM(
             BaseAuthenticator.current.authData[@"username"],
             self.metadata,
-            windowWidth, windowHeight,
+            MAX(windowWidth, windowHeight), MIN(windowWidth, windowHeight),
             minVersion
         );
     });
@@ -609,7 +648,7 @@ static GameSurfaceView* pojavWindow;
             } /* else if ((event == ACTION_MOVE || event == ACTION_UP) && slot == -1 && currentHotbarSlot != -1) {
                 return;
             } */
-            
+
             if (event == ACTION_DOWN && slot == -1) {
                 currentHotbarSlot = -1;
             }
@@ -642,7 +681,7 @@ static GameSurfaceView* pojavWindow;
             handled = YES;
         }
     }
-    
+
 
     if (!handled) {
         [super pressesBegan:presses withEvent:event];
@@ -657,7 +696,7 @@ static GameSurfaceView* pojavWindow;
             handled = YES;
         }
     }
-    
+
 
     if (!handled) {
         [super pressesEnded:presses withEvent:event];
@@ -713,7 +752,7 @@ static GameSurfaceView* pojavWindow;
             [self.lightHaptic impactOccurred];
         }
     }
-    
+
     if (!self.shouldTriggerClick) return;
 
     if (sender.state == UIGestureRecognizerStateRecognized) {
@@ -738,7 +777,7 @@ static GameSurfaceView* pojavWindow;
             [self.lightHaptic impactOccurred];
         }
     }
-    
+
     if (sender.state == UIGestureRecognizerStateRecognized && isGrabbing) {
         CGFloat screenScale = [[UIScreen mainScreen] scale];
         CGPoint point = [sender locationInView:self.rootView];
@@ -753,7 +792,7 @@ static GameSurfaceView* pojavWindow;
 
 - (void)surfaceOnHover:(UIGestureRecognizer *)sender {
     if (isGrabbing) return;
-    
+
     CGPoint point = [sender locationInView:self.rootView];
     // NSLog(@"Mouse move!!");
     // NSLog(@"Mouse pos = %f, %f", point.x, point.y);
@@ -781,7 +820,7 @@ static GameSurfaceView* pojavWindow;
             [self.mediumHaptic impactOccurred];
         }
     }
-    
+
     if (!self.slideableHotbar) {
         CGPoint location = [sender locationInView:self.rootView];
         CGFloat screenScale = UIScreen.mainScreen.scale;
@@ -818,7 +857,7 @@ static GameSurfaceView* pojavWindow;
             [self.lightHaptic impactOccurred];
         }
     }
-    
+
     if (isGrabbing) return;
     if (sender.state == UIGestureRecognizerStateBegan ||
         sender.state == UIGestureRecognizerStateChanged ||
@@ -921,7 +960,7 @@ static GameSurfaceView* pojavWindow;
     if(self.shouldTriggerHaptic) {
         [self.lightHaptic impactOccurred];
     }
-    
+
     if (sender.savedBackgroundColor == nil) {
         [self executebtn:sender withAction:ACTION_DOWN];
     }
