@@ -111,7 +111,7 @@ AME_JRE17_DIR       ?= $(SOURCEDIR)/depends/java-17-openjdk
 AME_JRE21_DIR       ?= $(SOURCEDIR)/depends/java-21-openjdk
 AME_JRE25_DIR       ?= $(SOURCEDIR)/depends/java-25-openjdk
 MOBILEGL_SOURCE_DIR	?= $(SOURCEDIR)/Natives/external/MobileGL
-MOLTENVK_LIBRARY    ?= $(WORKINGDIR)/libMoltenVK.dylib
+MOLTENVK_LIBRARY    ?= $(SOURCEDIR)/Natives/resources/Frameworks/libMoltenVK.dylib
 MOBILEGL_LOG_LEVEL   ?= MOBILEGL_LOG_LEVEL_INFO
 
 # Function to use later for checking dependencies
