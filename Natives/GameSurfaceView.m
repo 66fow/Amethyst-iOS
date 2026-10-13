@@ -17,9 +17,12 @@
 }
 
 + (Class)layerClass {
-    if (ame_renderer_from_name([PLProfiles resolveKeyForCurrentProfile:@"renderer"].UTF8String) == AME_RENDERER_ZINK) {
+    NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
+    if (renderer && [renderer hasPrefix:@"libOSMesa"]) {
+        // Zink (Mesa) renderer uses a regular CALayer
         return CALayer.class;
     } else {
+        // Default to Metal-backed layer
         return CAMetalLayer.class;
     }
 }
