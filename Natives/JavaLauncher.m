@@ -25,6 +25,7 @@
 #import "PLProfiles.h"
 #import "RendererCrashTracker.h"
 #import "ZinkConfig.h"
+#import "lwjgl_versions.h"
 
 #define fm NSFileManager.defaultManager
 
@@ -58,17 +59,7 @@ void init_loadDefaultEnv() {
     // Override OpenGL version to 4.1 for Zink
     setenv("MESA_GL_VERSION_OVERRIDE", "4.1", 1);
 
-    // MoltenVK 1.4.3 performance defaults for Apple GPUs.
-    // Use setenv(..., 0) so per-profile/user Java environment overrides win.
-    setenv("MVK_CONFIG_FAST_MATH_ENABLED", "2", 0);
-    setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "1", 0);
-    setenv("MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS", "0", 0);
-    setenv("MVK_CONFIG_USE_COMMAND_POOLING", "1", 0);
-    setenv("MVK_CONFIG_USE_MTLHEAP", "1", 0);
-    setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "1", 0);
-    setenv("MVK_CONFIG_VK_SEMAPHORE_SUPPORT_STYLE", "1", 0);
-    setenv("MVK_CONFIG_RESUME_LOST_DEVICE", "1", 0);
-    // errors only, the default info level dumps ~160 lines of extensions on every instance (the verbose graphics pref below raises it)
+    // Avoid MoltenVK's startup extension dump unless graphics logging is enabled.
     setenv("MVK_CONFIG_LOG_LEVEL", "1", 0);
 
     // Runs JVM in a separate thread
@@ -123,23 +114,17 @@ void init_loadCustomJvmFlags(int* argc, const char** argv) {
 
 // LWJGL
 
-static NSString * const AMLWJGLFolder333 = @"lwjgl-3.3.3";
-static NSString * const AMLWJGLFolder341 = @"lwjgl-3.4.1";
+typedef struct {
+    const char *version;
+    const char *folder;
+    const char *nativeSubfolder;
+} AMLWJGLVersion;
 
-static NSString * const AMLWJGLNativeSubfolder333 = @"lwjgl33";
-static NSString * const AMLWJGLNativeSubfolder341 = @"lwjgl34";
-
-static NSArray<NSArray<NSString *> *> *AMBundledLWJGLTable(void) {
-    static NSArray<NSArray<NSString *> *> *table;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        table = @[
-            @[@"3.3.3", AMLWJGLFolder333, AMLWJGLNativeSubfolder333],
-            @[@"3.4.1", AMLWJGLFolder341, AMLWJGLNativeSubfolder341],
-        ];
-    });
-    return table;
-}
+#define AM_LWJGL_VERSION_ENTRY(version, folder, nativeSubfolder) { version, folder, nativeSubfolder },
+static const AMLWJGLVersion AMBundledLWJGLVersions[] = {
+    AM_LWJGL_VERSION_TABLE(AM_LWJGL_VERSION_ENTRY)
+};
+#undef AM_LWJGL_VERSION_ENTRY
 
 static void AMParseVersion(NSString *versionString, int *major, int *minor, int *patch, BOOL *isCleanNumeric) {
     int m = 0, n = 0, p = 0;
@@ -164,49 +149,29 @@ static void AMParseVersion(NSString *versionString, int *major, int *minor, int 
     if (isCleanNumeric) *isCleanNumeric = clean;
 }
 
-static NSString *AMBundledFolderForRequiredVersion(NSString *requiredVersion) {
+static const AMLWJGLVersion *AMBundledLWJGLForRequiredVersion(NSString *requiredVersion, BOOL *usedFallback) {
     int reqMajor, reqMinor, reqPatch;
-    AMParseVersion(requiredVersion, &reqMajor, &reqMinor, &reqPatch, NULL);
+    BOOL isCleanNumeric;
+    AMParseVersion(requiredVersion, &reqMajor, &reqMinor, &reqPatch, &isCleanNumeric);
+    if (usedFallback) *usedFallback = NO;
 
-    if (reqMajor < 3) return nil;
+    if (!isCleanNumeric || reqMajor < 3) return NULL;
 
-    NSArray<NSArray<NSString *> *> *table = AMBundledLWJGLTable();
-
-    // First try to find the first bundled LWJGL version that satisfies
-    // the requested version.
-    for (NSArray<NSString *> *entry in table) {
+    for (size_t i = 0; i < sizeof(AMBundledLWJGLVersions) / sizeof(AMBundledLWJGLVersions[0]); i++) {
+        const AMLWJGLVersion *entry = &AMBundledLWJGLVersions[i];
         int bMajor, bMinor, bPatch;
-        AMParseVersion(entry[0], &bMajor, &bMinor, &bPatch, NULL);
+        AMParseVersion([NSString stringWithUTF8String:entry->version], &bMajor, &bMinor, &bPatch, NULL);
 
         BOOL meets = (bMajor > reqMajor) ||
                      (bMajor == reqMajor && bMinor > reqMinor) ||
                      (bMajor == reqMajor && bMinor == reqMinor && bPatch >= reqPatch);
 
         if (meets) {
-            return entry[1];
+            return entry;
         }
     }
-    
-    if (table.count > 0) {
-        NSArray<NSString *> *latest = table.lastObject;
-
-        NSLog(@"[JavaLauncher] Requested LWJGL %@ is newer than bundled versions — using newest bundled LWJGL %@",
-              requiredVersion,
-              latest[0]);
-
-        return latest[1];
-    }
-
-    return nil;
-}
-
-static NSString *AMNativeSubfolderForBundledFolder(NSString *bundledFolder) {
-    for (NSArray<NSString *> *entry in AMBundledLWJGLTable()) {
-        if ([entry[1] isEqualToString:bundledFolder]) {
-            return entry[2];
-        }
-    }
-    return nil;
+    if (usedFallback) *usedFallback = YES;
+    return &AMBundledLWJGLVersions[sizeof(AMBundledLWJGLVersions) / sizeof(AMBundledLWJGLVersions[0]) - 1];
 }
 
 int launchJVM(NSString *username, id launchTarget, int width, int height, int minVersion) {
@@ -261,7 +226,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     BOOL launchJar = NO;
     NSString *gameDir;
     NSString *defaultJRETag;
-    NSString *lwjglFolder = @"lwjgl-3.3.3";
+    const AMLWJGLVersion *lwjglVersion = &AMBundledLWJGLVersions[0];
     NSCAssert(launchTarget, @"Unexpected nil launchTarget");
     if ([launchTarget isKindOfClass:NSDictionary.class]) {
         // Get preferred Java version from current profile
@@ -281,10 +246,20 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         }
 
 
-        NSString *resolvedLWJGLFolder = nil;
+        const AMLWJGLVersion *resolvedLWJGLVersion = nil;
         NSString *lwjglVersionStr = launchTarget[@"lwjglVersion"];
         if ([lwjglVersionStr isKindOfClass:NSString.class] && lwjglVersionStr.length > 0) {
-            resolvedLWJGLFolder = AMBundledFolderForRequiredVersion(lwjglVersionStr);
+            BOOL usedFallback;
+            resolvedLWJGLVersion = AMBundledLWJGLForRequiredVersion(lwjglVersionStr, &usedFallback);
+            if (!resolvedLWJGLVersion) {
+                NSString *message = [NSString stringWithFormat:@"This game requests unsupported LWJGL %@. Amethyst will use bundled LWJGL %s.", lwjglVersionStr, lwjglVersion->version];
+                NSLog(@"[JavaLauncher] %@", message);
+                showDialog(localize(@"Warning", nil), message);
+            } else if (usedFallback) {
+                NSString *message = [NSString stringWithFormat:@"This game requests LWJGL %@, newer than bundled LWJGL %s. Compatibility is not guaranteed.", lwjglVersionStr, resolvedLWJGLVersion->version];
+                NSLog(@"[JavaLauncher] %@", message);
+                showDialog(localize(@"Warning", nil), message);
+            }
         } else {
             NSString *versionId = launchTarget[@"id"];
             if ([versionId isKindOfClass:NSString.class]) {
@@ -292,24 +267,28 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
                 BOOL isClean;
                 AMParseVersion(versionId, &major, NULL, NULL, &isClean);
                 if (major >= 26) {
-
-                    resolvedLWJGLFolder = AMBundledFolderForRequiredVersion(@"3.4.1");
+                    resolvedLWJGLVersion = AMBundledLWJGLForRequiredVersion(@"3.4.1", NULL);
                 } else if (isClean) {
-                    resolvedLWJGLFolder = AMBundledFolderForRequiredVersion(@"3.3.3");
+                    resolvedLWJGLVersion = AMBundledLWJGLForRequiredVersion(@"3.3.3", NULL);
                 }
             }
         }
-        if (resolvedLWJGLFolder) {
-            lwjglFolder = resolvedLWJGLFolder;
+        if (resolvedLWJGLVersion) {
+            lwjglVersion = resolvedLWJGLVersion;
         } else {
-            NSLog(@"[JavaLauncher] Could not resolve a bundled LWJGL folder for target %@ — keeping default %@", launchTarget[@"id"], lwjglFolder);
+            NSLog(@"[JavaLauncher] Could not resolve a bundled LWJGL version for target %@ — using %s", launchTarget[@"id"], lwjglVersion->version);
         }
-        NSLog(@"[JavaLauncher] Using LWJGL from %@", lwjglFolder);
+        NSLog(@"[JavaLauncher] Using LWJGL %s from %s", lwjglVersion->version, lwjglVersion->folder);
 
         // Setup AME_RENDERER
         NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
         NSLog(@"[JavaLauncher] RENDERER is set to %@\n", renderer);
         setenv("AME_RENDERER", renderer.UTF8String, 1);
+        if (isMoltenVKRenderer(renderer.UTF8String)) {
+            setenv("AME_VULKAN_LIBRARY", "libMoltenVK.dylib", 1);
+            NSLog(@"[JavaLauncher] MoltenVK direct Vulkan path selected");
+            showDialog(localize(@"Warning", nil), @"MoltenVK direct mode is for Vulkan applications that request GLFW_NO_API. Minecraft's normal OpenGL renderer requires MobileGL, Zink, ANGLE, MobileGlues, or gl4es.");
+        }
 
         // Apply Zink-specific environment variables if Zink renderer is selected
         if ([renderer hasPrefix:@"libOSMesa"]) {
@@ -362,6 +341,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         gameDir = @(getenv("GAME_DIR"));
         launchJar = YES;
     }
+    setenv("AME_LWJGL_NATIVE_SUBFOLDER", lwjglVersion->nativeSubfolder, 1);
     NSLog(@"[JavaLauncher] Looking for Java %d or later", minVersion);
     NSString *javaHome = getSelectedJavaHome(defaultJRETag, minVersion);
 
@@ -419,15 +399,12 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = [NSString stringWithFormat:@"-Xmx%dM", allocmem].UTF8String;
     
     NSString *frameworksPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks"];
-    NSString *lwjglNativeSubfolder = AMNativeSubfolderForBundledFolder(lwjglFolder);
+    NSString *lwjglFolder = @(lwjglVersion->folder);
+    NSString *lwjglNativeSubfolder = @(lwjglVersion->nativeSubfolder);
     NSString *javaLibraryPath = frameworksPath;
-    if (lwjglNativeSubfolder) {
-        javaLibraryPath = [NSString stringWithFormat:@"%@:%@",
-                            [frameworksPath stringByAppendingPathComponent:lwjglNativeSubfolder],
-                            frameworksPath];
-    } else {
-        NSLog(@"[JavaLauncher] No native subfolder mapped for %@ — LWJGL will fall back to the flat Frameworks/ search path", lwjglFolder);
-    }
+    javaLibraryPath = [NSString stringWithFormat:@"%@:%@",
+                        [frameworksPath stringByAppendingPathComponent:lwjglNativeSubfolder],
+                        frameworksPath];
     margv[++margc] = [NSString stringWithFormat:@"-Djava.library.path=%@", javaLibraryPath].UTF8String;
 
     // video.resolution (percent) for the SDL path, java shrinks the pixel size it reports to minecraft
@@ -435,11 +412,9 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
     margv[++margc] = "-Damethyst.noUpcalls=true";
 
-    if (lwjglNativeSubfolder) {
-        NSString *sdlDylibPath = [[frameworksPath stringByAppendingPathComponent:lwjglNativeSubfolder] stringByAppendingPathComponent:@"libSDL3_controlify.dylib"];
-        if ([fm fileExistsAtPath:sdlDylibPath]) {
-            margv[++margc] = [NSString stringWithFormat:@"-Ddev.isxander.sdl.library=%@", sdlDylibPath].UTF8String;
-        }
+    NSString *sdlDylibPath = [[frameworksPath stringByAppendingPathComponent:lwjglNativeSubfolder] stringByAppendingPathComponent:@"libSDL3_controlify.dylib"];
+    if ([fm fileExistsAtPath:sdlDylibPath]) {
+        margv[++margc] = [NSString stringWithFormat:@"-Ddev.isxander.sdl.library=%@", sdlDylibPath].UTF8String;
     }
     margv[++margc] = [NSString stringWithFormat:@"-Dpojav.lwjglVersion=%@", lwjglFolder].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.dir=%@", gameDir].UTF8String;
@@ -469,13 +444,14 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
     // Preset OpenGL libname
     const char *glLibName = getenv("AME_RENDERER");
-    if (glLibName) {
+    if (glLibName && !isMoltenVKRenderer(glLibName)) {
         if (!strcmp(glLibName, "auto")) {
             // workaround only applies to 1.20.2+
             glLibName = RENDERER_NAME_MTL_ANGLE;
         }
         margv[++margc] = [NSString stringWithFormat:@"-Dorg.lwjgl.opengl.libname=%s", glLibName].UTF8String;
     }
+    margv[++margc] = [NSString stringWithFormat:@"-Damethyst.vulkan.libname=%s", getenv("AME_VULKAN_LIBRARY") ?: "libMoltenVK.dylib"].UTF8String;
 
     NSString *librariesPath = [NSString stringWithFormat:@"%@/libs", NSBundle.mainBundle.bundlePath];
     margv[++margc] = [NSString stringWithFormat:@"-javaagent:%@/patchjna_agent.jar=", librariesPath].UTF8String;
@@ -578,13 +554,8 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSLog(@"[Init] Found JLI lib");
 
     NSString *classpath;
-    if (lwjglNativeSubfolder) {
-        classpath = [NSString stringWithFormat:@"%@/%@/*:%@/*",
-                     librariesPath, lwjglNativeSubfolder, librariesPath];
-    } else {
-        NSLog(@"[JavaLauncher] No native subfolder mapped for %@ — classpath will fall back to the flat libs/ search path", lwjglFolder);
-        classpath = [NSString stringWithFormat:@"%@/*", librariesPath];
-    }
+    classpath = [NSString stringWithFormat:@"%@/%@/*:%@/*",
+                 librariesPath, lwjglNativeSubfolder, librariesPath];
     if (launchJar) {
         classpath = [classpath stringByAppendingFormat:@":%@", launchTarget];
     }

@@ -28,6 +28,11 @@ public class GLFWVulkan {
 
      /** PojavLauncher: stub or wrap all functions to equivalent Vulkan functions */
 
+    private static final ByteBuffer KHR_SURFACE = memASCII(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME);
+    private static final ByteBuffer METAL_SURFACE = memASCII("VK_EXT_metal_surface");
+    private static final ByteBuffer ANDROID_SURFACE = memASCII("VK_KHR_android_surface");
+    private static final PointerBuffer REQUIRED_INSTANCE_EXTENSIONS = createRequiredInstanceExtensions();
+
     static {
         if (Platform.get() == Platform.MACOSX) {
             setPath(VK.getFunctionProvider());
@@ -36,6 +41,13 @@ public class GLFWVulkan {
 
     protected GLFWVulkan() {
         throw new UnsupportedOperationException();
+    }
+
+    private static PointerBuffer createRequiredInstanceExtensions() {
+        ByteBuffer platformSurface = Platform.get() == Platform.MACOSX ? METAL_SURFACE : ANDROID_SURFACE;
+        return memAllocPointer(2)
+            .put(0, memAddress(KHR_SURFACE))
+            .put(1, memAddress(platformSurface));
     }
 
     // --- [ glfwInitVulkanLoader ] ---
@@ -121,14 +133,7 @@ public class GLFWVulkan {
     @Nullable
     @NativeType("char const **")
     public static PointerBuffer glfwGetRequiredInstanceExtensions() {
-        MemoryStack stack = MemoryStack.stackPush();
-        String platformSurface;
-        if (Platform.get() == Platform.MACOSX) {
-            platformSurface = "VK_EXT_metal_surface";
-        } else {
-            platformSurface = "VK_KHR_android_surface";
-        }
-        return stack.pointers(stack.UTF8(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME), stack.UTF8(platformSurface));
+        return REQUIRED_INSTANCE_EXTENSIONS.duplicate();
     }
 
     /**

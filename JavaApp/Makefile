@@ -10,18 +10,20 @@ CLASSES := $(SOURCES:$(SOURCEDIR)/%.java=$(OUTPUTDIR)/%.class)
 
 TARGETS := $(shell find $(SOURCEDIR) -mindepth 1 -maxdepth 1 -type d)
 TARGETS := $(filter-out $(OUTPUTDIR)/lwjgl.jar,$(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar))
+LWJGL_VERSION_TABLE := $(shell sed -n 's/^ *X("\([^"]*\)", "\([^"]*\)", "\([^"]*\)").*/\1:\2:\3/p' ../Natives/lwjgl_versions.h)
+LWJGL_VERSIONS := $(foreach entry,$(LWJGL_VERSION_TABLE),$(word 1,$(subst :, ,$(entry))))
+LWJGL_JARS := $(foreach version,$(LWJGL_VERSIONS),$(OUTPUTDIR)/lwjgl-$(version).jar)
+LWJGL_LATEST_VERSION := $(lastword $(LWJGL_VERSIONS))
 
 # Add all jars to classpath and allow compiling with private API.
 # This remains the normal classpath for the existing launcher and
 # LWJGL 3.3.3 sources.
 JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/*.jar))" -XDignore.symbol.file -implicit:none
 
-# SDL3/LWJGL 3.4.1 must compile against the 3.4.1 LWJGL core.
-# Do NOT include libs/lwjgl-3.3.3 here, otherwise the older
-# org.lwjgl.system.Configuration/JNI classes can shadow the 3.4.1 APIs.
-SDL_JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/lwjgl-3.4.1/*.jar))" -XDignore.symbol.file -implicit:none
+# SDL3 builds against the newest bundled LWJGL core.
+SDL_JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/lwjgl-$(LWJGL_LATEST_VERSION)/*.jar))" -XDignore.symbol.file -implicit:none
 
-all: $(TARGETS) $(OUTPUTDIR)/lwjgl-3.3.3.jar $(OUTPUTDIR)/lwjgl-3.4.1.jar
+all: $(TARGETS) $(LWJGL_JARS)
 
 # Sometimes the CI produces empty class file resulting in broken jar, so we check and abort here
 check_empty_classes:
@@ -41,7 +43,7 @@ $(CLASSES): $(OUTPUTDIR)/%.class: $(SOURCEDIR)/%.java
 	@mkdir -p $(dir $@)
 	@echo "Compiling $<"
 	@if [[ "$<" == $(SOURCEDIR)/lwjgl/org/lwjgl/sdl/* ]]; then \
-		echo "Using LWJGL 3.4.1 classpath for SDL3: $<"; \
+		echo "Using LWJGL $(LWJGL_LATEST_VERSION) classpath for SDL3: $<"; \
 		$(BOOTJDK)/javac $(SDL_JCFLAGS) -d $(OUTPUTDIR)/classes $<; \
 	else \
 		$(BOOTJDK)/javac $(JCFLAGS) -d $(OUTPUTDIR)/classes $<; \
@@ -53,23 +55,14 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
-$(OUTPUTDIR)/lwjgl-3.3.3.jar: $(CLASSES) check_empty_classes
+$(OUTPUTDIR)/lwjgl-%.jar: $(CLASSES) check_empty_classes
 	@set -e
 	@echo "Creating $@"
-	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_3.3.3
-	@cd $(OUTPUTDIR)/lwjgl_lib_3.3.3 && find ../../libs/lwjgl-3.3.3 -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \;
-	@rm -rf $(OUTPUTDIR)/lwjgl_lib_3.3.3/META-INF
-	@cp -R $(OUTPUTDIR)/lwjgl/. $(OUTPUTDIR)/lwjgl_lib_3.3.3/
-	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib_3.3.3 .
-
-$(OUTPUTDIR)/lwjgl-3.4.1.jar: $(CLASSES) check_empty_classes
-	@set -e
-	@echo "Creating $@"
-	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_3.4.1
-	@cd $(OUTPUTDIR)/lwjgl_lib_3.4.1 && find ../../libs/lwjgl-3.4.1 -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \;
-	@rm -rf $(OUTPUTDIR)/lwjgl_lib_3.4.1/META-INF
-	@cp -R $(OUTPUTDIR)/lwjgl/. $(OUTPUTDIR)/lwjgl_lib_3.4.1/
-	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib_3.4.1 .
+	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_$*
+	@cd $(OUTPUTDIR)/lwjgl_lib_$* && find ../../libs/lwjgl-$* -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \;
+	@rm -rf $(OUTPUTDIR)/lwjgl_lib_$*/META-INF
+	@cp -R $(OUTPUTDIR)/lwjgl/. $(OUTPUTDIR)/lwjgl_lib_$*/
+	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib_$* .
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e

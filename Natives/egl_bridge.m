@@ -50,6 +50,10 @@ int pojavInit(BOOL useStackQueue) {
 
 int pojavInitOpenGL() {
     NSString *renderer = NSProcessInfo.processInfo.environment[@"AME_RENDERER"];
+    if (isMoltenVKRenderer(renderer.UTF8String)) {
+        NSLog(@"[Vulkan] MoltenVK direct mode cannot create an OpenGL context");
+        return -1;
+    }
     BOOL isAuto = [renderer isEqualToString:@"auto"];
     if (isAuto || [renderer isEqualToString:@ RENDERER_NAME_GL4ES]) {
         // At this point, if renderer is still auto (unspecified major version), pick gl4es
@@ -69,12 +73,18 @@ int pojavInitOpenGL() {
         setenv("GALLIUM_DRIVER","zink",1);
         set_osm_bridge_tbl();
     }
+    if (!br_init) {
+        NSLog(@"EGLBridge: no bridge configured for renderer %@", renderer);
+        return -1;
+    }
     JNI_LWJGL_changeRenderer(renderer.UTF8String);
-    // Preload renderer library
-    dlopen([NSString stringWithFormat:@"@rpath/%@", renderer].UTF8String, RTLD_GLOBAL);
+    void *library = dlopen([NSString stringWithFormat:@"@rpath/%@", renderer].UTF8String, RTLD_GLOBAL);
+    if (!library) {
+        NSLog(@"EGLBridge: failed to preload %@: %s", renderer, dlerror() ?: "unknown error");
+        return -1;
+    }
 
-    return !br_init();
-    //return 0;
+    return br_init() ? 0 : -1;
 }
 
 void pojavSetWindowHint(int hint, int value) {
@@ -112,8 +122,8 @@ void* pojavCreateContext(basic_render_window_t* contextSrc) {
 
     static BOOL inited = NO;
     if (!inited) {
+        if (pojavInitOpenGL() != 0) return NULL;
         inited = YES;
-        pojavInitOpenGL();
     }
 
     return br_init_context(contextSrc);

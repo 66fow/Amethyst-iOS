@@ -391,9 +391,12 @@ static void AMInstallUIKitObservers(void) {
  */
 static void AMSDL3SetMainReady(void) {
     AMRunSyncOnMain(^{
+        const char *nativeSubfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
+        if (nativeSubfolder == NULL || *nativeSubfolder == '\0') return;
+        NSString *frameworks = [NSString stringWithFormat:@"Frameworks/%s/libSDL3.dylib", nativeSubfolder];
         const char *paths[] = {
-            "@executable_path/Frameworks/lwjgl34/libSDL3.dylib",
-            "@loader_path/Frameworks/lwjgl34/libSDL3.dylib",
+            [[@"@executable_path/" stringByAppendingString:frameworks] UTF8String],
+            [[@"@loader_path/" stringByAppendingString:frameworks] UTF8String],
             NULL
         };
 
@@ -435,7 +438,10 @@ static void AMSDL3SetMainReady(void) {
 
 static void AMSDL3SetMainReadyForControlify(void) {
     AMRunSyncOnMain(^{
-        void *handle = dlopen("@executable_path/Frameworks/lwjgl34/libSDL3_controlify.dylib", RTLD_NOW | RTLD_LOCAL);
+        const char *nativeSubfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
+        if (nativeSubfolder == NULL || *nativeSubfolder == '\0') return;
+        NSString *path = [NSString stringWithFormat:@"@executable_path/Frameworks/%s/libSDL3_controlify.dylib", nativeSubfolder];
+        void *handle = dlopen(path.UTF8String, RTLD_NOW | RTLD_LOCAL);
         if (handle == NULL) {
             NSLog(@"[SDL3] no private SDL copy for Controlify (libSDL3_controlify.dylib), controller mods will not work");
             return;

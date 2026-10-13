@@ -40,10 +40,16 @@
 #define RENDERER_NAME_MOBILEGLUES "libmobileglues.dylib"
 #define RENDERER_NAME_MOBILEGL "libMobileGL.dylib"
 #define RENDERER_NAME_VK_ZINK "libOSMesa.8.dylib"
+#define RENDERER_NAME_MOLTENVK "libMoltenVK.dylib"
 
 static inline bool isMobileGLRenderer(const char *renderer)
 {
     return renderer && !strcmp(renderer, RENDERER_NAME_MOBILEGL);
+}
+
+static inline bool isMoltenVKRenderer(const char *renderer)
+{
+    return renderer && !strcmp(renderer, RENDERER_NAME_MOLTENVK);
 }
 
 #define SPECIALBTN_KEYBOARD -1

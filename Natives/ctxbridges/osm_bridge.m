@@ -42,18 +42,24 @@ osm_render_window_t* osm_init_context(osm_render_window_t* share) {
     return render_window;
 }
 
-void osm_apply_current_ll() {
+static BOOL osm_apply_current_ll() {
     if (currentBundle->osm.width == windowWidth && currentBundle->osm.height == windowHeight) {
-        return;
+        return NO;
     }
 
+    void *buffer = realloc(currentBundle->osm.buffer, windowWidth * windowHeight * 4);
+    if (!buffer) {
+        NSLog(@"OSMBridge: failed to allocate %dx%d framebuffer", windowWidth, windowHeight);
+        return NO;
+    }
+    currentBundle->osm.buffer = buffer;
     currentBundle->osm.width = windowWidth;
     currentBundle->osm.height = windowHeight;
-    currentBundle->osm.buffer = reallocf(currentBundle->osm.buffer, windowWidth * windowHeight * 4);
 
     handle.OSMesaMakeCurrent(currentBundle->osm.context, currentBundle->osm.buffer, GL_UNSIGNED_BYTE, currentBundle->osm.width, currentBundle->osm.height);
     handle.OSMesaPixelStore(OSMESA_ROW_LENGTH, currentBundle->osm.width);
     handle.OSMesaPixelStore(OSMESA_Y_UP, 0);
+    return YES;
 }
 
 void osm_make_current(osm_render_window_t* bundle) {
@@ -69,9 +75,21 @@ void osm_make_current(osm_render_window_t* bundle) {
         return;
     }
 
+    if (currentBundle == (basic_render_window_t *)bundle) {
+        osm_apply_current_ll();
+        return;
+    }
+
     currentBundle = (basic_render_window_t *)bundle;
-    currentBundle->osm.color_space = CGColorSpaceCreateDeviceRGB();
-    osm_apply_current_ll();
+    if (!currentBundle->osm.color_space) {
+        currentBundle->osm.color_space = CGColorSpaceCreateDeviceRGB();
+    }
+    if (!osm_apply_current_ll()) {
+        handle.OSMesaMakeCurrent(currentBundle->osm.context, currentBundle->osm.buffer,
+                                 GL_UNSIGNED_BYTE, currentBundle->osm.width, currentBundle->osm.height);
+        handle.OSMesaPixelStore(OSMESA_ROW_LENGTH, currentBundle->osm.width);
+        handle.OSMesaPixelStore(OSMESA_Y_UP, 0);
+    }
 }
 
 void osm_swap_buffers() {

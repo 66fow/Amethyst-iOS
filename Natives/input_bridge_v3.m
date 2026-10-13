@@ -29,6 +29,14 @@
 jint (*orig_ProcessImpl_forkAndExec)(JNIEnv *env, jobject process, jint mode, jbyteArray helperpath, jbyteArray prog, jbyteArray argBlock, jint argc, jbyteArray envBlock, jint envc, jbyteArray dir, jintArray std_fds, jboolean redirectErrorStream);
 jlong (*orig_ProcessHandleImpl_isAlive0)(JNIEnv *env, jclass clazz, jlong jpid);
 
+static char *AMCopyByteArrayCString(JNIEnv *env, jbyteArray array) {
+    if (!array) return NULL;
+    jsize length = (*env)->GetArrayLength(env, array);
+    char *string = calloc((size_t)length + 1, 1);
+    if (string) (*env)->GetByteArrayRegion(env, array, 0, length, (jbyte *)string);
+    return string;
+}
+
 NSString* processPath(NSString* path) {
     if ([path hasPrefix:@"file:"]) {
         path = [path substringFromIndex:5].stringByRemovingPercentEncoding;
@@ -81,19 +89,24 @@ void openURLGlobal(NSString *path) {
  */
 jint
 hooked_ProcessImpl_forkAndExec(JNIEnv *env, jobject process, jint mode, jbyteArray helperpath, jbyteArray prog, jbyteArray argBlock, jint argc, jbyteArray envBlock, jint envc, jbyteArray dir, jintArray std_fds, jboolean redirectErrorStream) {
-    char *pProg = (char *)((*env)->GetByteArrayElements(env, prog, NULL));
-
-    // Here we only handle the "open" command
-    if (strcmp(basename(pProg), "open")) {
-        (*env)->ReleaseByteArrayElements(env, prog, (jbyte *)pProg, 0);
+    char *pProg = AMCopyByteArrayCString(env, prog);
+    if (!pProg) {
         return orig_ProcessImpl_forkAndExec(env, process, mode, helperpath, prog, argBlock, argc, envBlock, envc, dir, std_fds, redirectErrorStream);
     }
 
-    char *path = (char *)((*env)->GetByteArrayElements(env, argBlock, NULL));
-    openURLGlobal(@(path));
+    // Here we only handle the "open" command
+    if (strcmp(basename(pProg), "open")) {
+        free(pProg);
+        return orig_ProcessImpl_forkAndExec(env, process, mode, helperpath, prog, argBlock, argc, envBlock, envc, dir, std_fds, redirectErrorStream);
+    }
 
-    (*env)->ReleaseByteArrayElements(env, prog, (jbyte *)pProg, 0);
-    (*env)->ReleaseByteArrayElements(env, argBlock, (jbyte *)path, 0);
+    char *path = AMCopyByteArrayCString(env, argBlock);
+    if (path) {
+        openURLGlobal([NSString stringWithUTF8String:path]);
+        free(path);
+    }
+
+    free(pProg);
     return 0;
 }
 

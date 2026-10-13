@@ -149,7 +149,7 @@
     } else {
         NSDebugLog(@"[PLPreferences] Migrating to %@", self.globalPath.lastPathComponent);
         // Perform migration from v1 layout
-        self.globalPref = [NSMutableDictionary new];
+        self.globalPref = [PLPreferences defaultPrefForGlobal:YES];
         for (NSString *section in self.globalPref.allKeys) {
             for (NSString *key in self.globalPref[section].allKeys) {
                 id value = [PLPreferences getOldLayoutPreference:key from:oldPref];

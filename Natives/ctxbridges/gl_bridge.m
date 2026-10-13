@@ -191,6 +191,8 @@ void gl_make_current(gl_render_window_t* bundle) {
         return;
     }
 
+    if (currentBundle == (basic_render_window_t *)bundle) return;
+
     if(handle.eglMakeCurrent(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
         currentBundle = (basic_render_window_t *)bundle;
     } else {
