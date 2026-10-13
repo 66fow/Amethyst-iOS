@@ -24,6 +24,7 @@
 
 #include "glfw_keycodes.h"
 #include "utils.h"
+#include "renderer_info.h"
 
 #include <dlfcn.h>
 
@@ -180,7 +181,7 @@ static GameSurfaceView* pojavWindow;
     virtualMouseEnabled = getPrefBool(@"control.virtmouse_enable");
     virtualMouseFrame = CGRectMake(self.view.frame.size.width / 2, self.view.frame.size.height / 2, 18, 27);
     self.mousePointerView = [[UIImageView alloc] initWithFrame:virtualMouseFrame];
-    self.mousePointerView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleRightMargin |UIViewAutoresizingFlexibleBottomMargin;
+    self.mousePointerView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleRightMargin |UIViewAutoresizingFlexibleBottomMa[...]
     self.mousePointerView.hidden = !virtualMouseEnabled;
     self.mousePointerView.image = [UIImage imageNamed:@"MousePointer"];
     self.mousePointerView.userInteractionEnabled = NO;
@@ -205,14 +206,14 @@ static GameSurfaceView* pojavWindow;
     self.swipeableButtons = [[NSMutableArray alloc] init];
 
     [KeyboardInput initKeycodeTable];
-    self.mouseConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+    self.mouseConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n[...]
         NSLog(@"Input: Mouse connected!");
         GCMouse* mouse = note.object;
         [self registerMouseCallbacks:mouse];
         self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
         [self setNeedsUpdateOfPrefersPointerLocked];
     }];
-    self.mouseDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+    self.mouseDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotificat[...]
         NSLog(@"Input: Mouse disconnected!");
         GCMouse* mouse = note.object;
         mouse.mouseInput.mouseMovedHandler = nil;
@@ -231,7 +232,7 @@ static GameSurfaceView* pojavWindow;
     
 
     // TODO: deal with multiple controllers by letting users decide which one to use?
-    self.controllerConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+    self.controllerConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotif[...]
         NSLog(@"Input: Controller connected!");
         GCController* controller = note.object;
         [ControllerInput initKeycodeTable];
@@ -242,7 +243,7 @@ static GameSurfaceView* pojavWindow;
             self.ctrlView.hidden = YES;
         }
     }];
-    self.controllerDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+    self.controllerDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(N[...]
         NSLog(@"Input: Controller disconnected!");
         GCController* controller = note.object;
         [ControllerInput unregisterControllerCallbacks:controller];
@@ -997,77 +998,3 @@ int touchesMovedCount;
     [super touchesBegan:touches withEvent:event];
     int i = 0;
     for (UITouch *touch in touches) {
-        if (touch.type == UITouchTypeIndirectPointer) {
-            continue; // handle this in a different place
-        }
-        CGPoint locationInView = [touch locationInView:self.rootView];
-        CGFloat screenScale = [[UIScreen mainScreen] scale];
-        currentHotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(locationInView.x * screenScale, locationInView.y * screenScale) : -1;
-        if ([self isTouchInactive:self.hotbarTouch] && currentHotbarSlot != -1) {
-            self.hotbarTouch = touch;
-        }
-        if ([self isTouchInactive:self.primaryTouch] && currentHotbarSlot == -1) {
-            self.primaryTouch = touch;
-        }
-        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_DOWN];
-        break;
-    }
-}
-
-// Equals to Android ACTION_MOVE
-- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    [super touchesMoved:touches withEvent:event];
-
-    for (UITouch *touch in touches) {
-        if (touch.type == UITouchTypeIndirectPointer) {
-            if (!isGrabbing && !virtualMouseEnabled) {
-                CGPoint point = [touch locationInView:self.rootView];
-                [self sendTouchPoint:point withEvent:ACTION_MOVE];
-            }
-            continue; // handle this in a different place
-        }
-        if (self.hotbarTouch != touch && [self isTouchInactive:self.primaryTouch]) {
-            // Replace the inactive touch with the current active touch
-            self.primaryTouch = touch;
-            [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_DOWN];
-        }
-        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_MOVE];
-    }
-}
-
-// For ACTION_UP and ACTION_CANCEL
-- (void)touchesEndedGlobal:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    for (UITouch *touch in touches) {
-        if (touch.type == UITouchTypeIndirectPointer) {
-            continue; // handle this in a different place
-        }
-        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_UP];
-    }
-}
-
-// Equals to Android ACTION_UP
-- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    [super touchesEnded:touches withEvent:event];
-    [self touchesEndedGlobal:touches withEvent:event];
-}
-
-// Equals to Android ACTION_CANCEL
-- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    [super touchesCancelled:touches withEvent:event];
-    [self touchesEndedGlobal:touches withEvent:event];
-}
-
-+ (BOOL)isRunning {
-    return [UIWindow.mainWindow.rootViewController isKindOfClass:SurfaceViewController.class];
-}
-
-+ (GameSurfaceView *)surface {
-    return pojavWindow;
-}
-
-@end
