@@ -10,18 +10,27 @@ CLASSES := $(SOURCES:$(SOURCEDIR)/%.java=$(OUTPUTDIR)/%.class)
 
 TARGETS := $(shell find $(SOURCEDIR) -mindepth 1 -maxdepth 1 -type d)
 TARGETS := $(filter-out $(OUTPUTDIR)/lwjgl.jar,$(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar))
-LWJGL_VERSION_TABLE := $(shell sed -n 's/^ *X("\([^"]*\)", "\([^"]*\)", "\([^"]*\)").*/\1:\2:\3/p' ../Natives/lwjgl_versions.h)
-LWJGL_VERSIONS := $(foreach entry,$(LWJGL_VERSION_TABLE),$(word 1,$(subst :, ,$(entry))))
-LWJGL_JARS := $(foreach version,$(LWJGL_VERSIONS),$(OUTPUTDIR)/lwjgl-$(version).jar)
-LWJGL_LATEST_VERSION := $(lastword $(LWJGL_VERSIONS))
+
+# Bundled LWJGL versions come from the same list JavaLauncher reads at runtime,
+# oldest first. Each one needs JavaApp/libs/lwjgl-<version>.
+LWJGL_MANIFEST := ../Natives/resources/lwjgl_versions.txt
+LWJGL_VERSIONS := $(shell awk '/^[ \t]*\#/ {next} NF {print $$1}' $(LWJGL_MANIFEST))
+LWJGL_SDL_VERSIONS := $(shell awk '/^[ \t]*\#/ {next} {for (i = 3; i <= NF; i++) if ($$i == "sdl") print $$1}' $(LWJGL_MANIFEST))
+ifeq ($(LWJGL_VERSIONS),)
+$(error No LWJGL versions found in $(LWJGL_MANIFEST))
+endif
+LWJGL_JARS := $(LWJGL_VERSIONS:%=$(OUTPUTDIR)/lwjgl-%.jar)
 
 # Add all jars to classpath and allow compiling with private API.
 # This remains the normal classpath for the existing launcher and
 # LWJGL 3.3.3 sources.
 JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/*.jar))" -XDignore.symbol.file -implicit:none
 
-# SDL3 builds against the newest bundled LWJGL core.
-SDL_JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/lwjgl-$(LWJGL_LATEST_VERSION)/*.jar))" -XDignore.symbol.file -implicit:none
+# SDL3 sources must compile against the core of the newest build that ships SDL.
+# Do NOT include the older lwjgl dirs here, otherwise their
+# org.lwjgl.system.Configuration/JNI classes can shadow the newer APIs.
+SDL_VERSION := $(lastword $(LWJGL_SDL_VERSIONS))
+SDL_JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/lwjgl-$(SDL_VERSION)/*.jar))" -XDignore.symbol.file -implicit:none
 
 all: $(TARGETS) $(LWJGL_JARS)
 
@@ -43,7 +52,7 @@ $(CLASSES): $(OUTPUTDIR)/%.class: $(SOURCEDIR)/%.java
 	@mkdir -p $(dir $@)
 	@echo "Compiling $<"
 	@if [[ "$<" == $(SOURCEDIR)/lwjgl/org/lwjgl/sdl/* ]]; then \
-		echo "Using LWJGL $(LWJGL_LATEST_VERSION) classpath for SDL3: $<"; \
+		echo "Using LWJGL $(SDL_VERSION) classpath for SDL3: $<"; \
 		$(BOOTJDK)/javac $(SDL_JCFLAGS) -d $(OUTPUTDIR)/classes $<; \
 	else \
 		$(BOOTJDK)/javac $(JCFLAGS) -d $(OUTPUTDIR)/classes $<; \
@@ -55,14 +64,18 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
-$(OUTPUTDIR)/lwjgl-%.jar: $(CLASSES) check_empty_classes
+# one fat jar per bundled version: its lwjgl jars plus our classes from src/lwjgl
+define LWJGL_JAR_RULE
+$$(OUTPUTDIR)/lwjgl-$(1).jar: $$(CLASSES) check_empty_classes
 	@set -e
-	@echo "Creating $@"
-	@mkdir -p $(OUTPUTDIR)/lwjgl_lib_$*
-	@cd $(OUTPUTDIR)/lwjgl_lib_$* && find ../../libs/lwjgl-$* -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \;
-	@rm -rf $(OUTPUTDIR)/lwjgl_lib_$*/META-INF
-	@cp -R $(OUTPUTDIR)/lwjgl/. $(OUTPUTDIR)/lwjgl_lib_$*/
-	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib_$* .
+	@echo "Creating $$@"
+	@mkdir -p $$(OUTPUTDIR)/lwjgl_lib_$(1)
+	@cd $$(OUTPUTDIR)/lwjgl_lib_$(1) && find ../../libs/lwjgl-$(1) -name 'lwjgl*.jar' -exec $$(BOOTJDK)/jar -xf {} \;
+	@rm -rf $$(OUTPUTDIR)/lwjgl_lib_$(1)/META-INF
+	@cp -R $$(OUTPUTDIR)/lwjgl/. $$(OUTPUTDIR)/lwjgl_lib_$(1)/
+	@$$(BOOTJDK)/jar -cf $$@ -C $$(OUTPUTDIR)/lwjgl_lib_$(1) .
+endef
+$(foreach version,$(LWJGL_VERSIONS),$(eval $(call LWJGL_JAR_RULE,$(version))))
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e

@@ -376,8 +376,7 @@ static GameSurfaceView* pojavWindow;
 
     resolutionScale = getPrefFloat(@"video.resolution") / 100.0;
     // ANGLE sizes its drawable from bounds * contentsScale and ignores drawableSize
-    const char *renderer = getenv("AME_RENDERER");
-    BOOL angleBacked = renderer != NULL && (!strcmp(renderer, RENDERER_NAME_MOBILEGLUES) || !strcmp(renderer, RENDERER_NAME_MTL_ANGLE));
+    BOOL angleBacked = ame_renderer_uses_angle(ame_renderer_from_name(getenv("AME_RENDERER")));
     self.surfaceView.layer.contentsScale = angleBacked ? self.screenScale * resolutionScale : self.screenScale;
 
     physicalWidth = roundf(self.surfaceView.frame.size.width * self.screenScale);

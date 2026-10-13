@@ -49,60 +49,47 @@ int pojavInit(BOOL useStackQueue) {
 }
 
 int pojavInitOpenGL() {
-    NSString *renderer = NSProcessInfo.processInfo.environment[@"AME_RENDERER"];
-    if (isMoltenVKRenderer(renderer.UTF8String)) {
-        NSLog(@"[Vulkan] MoltenVK direct mode cannot create an OpenGL context");
-        return -1;
-    }
-    BOOL isAuto = [renderer isEqualToString:@"auto"];
-    if (isAuto || [renderer isEqualToString:@ RENDERER_NAME_GL4ES]) {
-        // At this point, if renderer is still auto (unspecified major version), pick gl4es
-        renderer = @ RENDERER_NAME_GL4ES;
-        setenv("AME_RENDERER", renderer.UTF8String, 1);
-        set_gl_bridge_tbl();
-    } else if ([renderer isEqualToString:@ RENDERER_NAME_MOBILEGLUES]) {
-        renderer = @ RENDERER_NAME_MOBILEGLUES;
-        setenv("AME_RENDERER", renderer.UTF8String, 1);
-        set_gl_bridge_tbl();
-    } else if (isMobileGLRenderer(renderer.UTF8String)) {
-        setenv("MOBILEGL_BACKEND_TYPE", "DirectVulkan", 1);
-        set_gl_bridge_tbl();
-    } else if ([renderer isEqualToString:@ RENDERER_NAME_MTL_ANGLE]) {
-        set_gl_bridge_tbl();
-    } else if ([renderer hasPrefix:@"libOSMesa"]) {
-        setenv("GALLIUM_DRIVER","zink",1);
-        set_osm_bridge_tbl();
-    }
-    if (!br_init) {
-        NSLog(@"EGLBridge: no bridge configured for renderer %@", renderer);
-        return -1;
-    }
-    JNI_LWJGL_changeRenderer(renderer.UTF8String);
-    void *library = dlopen([NSString stringWithFormat:@"@rpath/%@", renderer].UTF8String, RTLD_GLOBAL);
-    if (!library) {
-        NSLog(@"EGLBridge: failed to preload %@: %s", renderer, dlerror() ?: "unknown error");
-        return -1;
+    const char *name = getenv("AME_RENDERER");
+    ame_renderer_t kind = ame_renderer_from_name(name);
+    // auto still unresolved here means the game never asked for a GL version, pick gl4es
+    if (kind == AME_RENDERER_AUTO) {
+        kind = AME_RENDERER_GL4ES;
+        name = RENDERER_NAME_GL4ES;
+        setenv("AME_RENDERER", name, 1);
     }
 
-    return br_init() ? 0 : -1;
+    switch (kind) {
+        case AME_RENDERER_GL4ES:
+        case AME_RENDERER_ANGLE:
+        case AME_RENDERER_MOBILEGLUES:
+            set_gl_bridge_tbl();
+            break;
+        case AME_RENDERER_MOBILEGL:
+            setenv("MOBILEGL_BACKEND_TYPE", "DirectVulkan", 1);
+            set_gl_bridge_tbl();
+            break;
+        case AME_RENDERER_ZINK:
+            setenv("GALLIUM_DRIVER","zink",1);
+            set_osm_bridge_tbl();
+            break;
+        default:
+            NSLog(@"pojavInitOpenGL: unknown renderer %s", name ?: "<unset>");
+            return 1;
+    }
+    JNI_LWJGL_changeRenderer(name);
+    // Preload renderer library
+    dlopen([NSString stringWithFormat:@"@rpath/%s", name].UTF8String, RTLD_GLOBAL);
+
+    return !br_init();
 }
 
 void pojavSetWindowHint(int hint, int value) {
     if (hint == GLFW_CLIENT_API) {
         clientAPI = value;
-    } else if (strcmp(getenv("AME_RENDERER"), "auto")==0 && hint == GLFW_CONTEXT_VERSION_MAJOR) {
-        switch (value) {
-            case 1:
-            case 2:
-                setenv("AME_RENDERER", RENDERER_NAME_GL4ES, 1);
-                JNI_LWJGL_changeRenderer(RENDERER_NAME_GL4ES);
-                break;
-            // case 4: use Zink?
-            default:
-                setenv("AME_RENDERER", RENDERER_NAME_MOBILEGLUES, 1);
-                JNI_LWJGL_changeRenderer(RENDERER_NAME_MOBILEGLUES);
-                break;
-        }
+    } else if (hint == GLFW_CONTEXT_VERSION_MAJOR && ame_renderer_from_name(getenv("AME_RENDERER")) == AME_RENDERER_AUTO) {
+        const char *picked = (value == 1 || value == 2) ? RENDERER_NAME_GL4ES : RENDERER_NAME_MOBILEGLUES;
+        setenv("AME_RENDERER", picked, 1);
+        JNI_LWJGL_changeRenderer(picked);
     }
 }
 
@@ -122,8 +109,8 @@ void* pojavCreateContext(basic_render_window_t* contextSrc) {
 
     static BOOL inited = NO;
     if (!inited) {
-        if (pojavInitOpenGL() != 0) return NULL;
         inited = YES;
+        pojavInitOpenGL();
     }
 
     return br_init_context(contextSrc);

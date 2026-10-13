@@ -140,8 +140,7 @@ NSArray* getRendererKeys(BOOL containsDefault) {
         @ RENDERER_NAME_MTL_ANGLE,
         @ RENDERER_NAME_MOBILEGLUES,
         @ RENDERER_NAME_MOBILEGL,
-        @ RENDERER_NAME_VK_ZINK,
-        @ RENDERER_NAME_MOLTENVK
+        @ RENDERER_NAME_VK_ZINK
     ].mutableCopy;
 
     if (containsDefault) {
@@ -160,8 +159,7 @@ NSArray* getRendererNames(BOOL containsDefault) {
         localize(@"preference.title.renderer.debug.angle", nil),
         localize(@"preference.title.renderer.debug.mg", nil),
         localize(@"preference.title.renderer.debug.mobilegl", nil),
-        localize(@"preference.title.renderer.debug.zink", nil),
-        localize(@"preference.title.renderer.debug.moltenvk", nil)
+        localize(@"preference.title.renderer.debug.zink", nil)
     ].mutableCopy;
 
     if (containsDefault) {

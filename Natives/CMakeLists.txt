@@ -104,6 +104,7 @@ add_executable(AngelAuraAmethyst
   main.m
   main_hook.m
   JavaLauncher.m
+  LWJGLVersions.m
   sdl3_hook.m
   sdl3_gl_layer.m
   external/fishhook/fishhook.c

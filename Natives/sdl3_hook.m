@@ -143,9 +143,8 @@ static void AMApplyPixelFilter(UIView *view) {
 // MoltenVK and ANGLE size their drawable from bounds * contentsScale, so the resolution setting has to live in the scale
 void AmethystSDL3ApplyResolutionScale(void) {
     UIView *view = gSDLView;
-    const char *renderer = getenv("AME_RENDERER");
     // MobileGL sizes its own surface
-    if (view == nil || (renderer != NULL && !strcmp(renderer, RENDERER_NAME_MOBILEGL))) return;
+    if (view == nil || isMobileGLRenderer(getenv("AME_RENDERER"))) return;
 
     CGFloat base = view.window.screen.scale;
     if (base <= 0) base = UIScreen.mainScreen.scale;
@@ -386,22 +385,25 @@ static void AMInstallUIKitObservers(void) {
     AMTrace(@"[SDL3 EMBED] UIKit window observers installed");
 }
 
+// Frameworks subfolder of the LWJGL build JavaLauncher picked, empty when none was
+static NSString *AMLWJGLNativeSubfolder(void) {
+    const char *subfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
+    return (subfolder != NULL && *subfolder) ? @(subfolder) : @"";
+}
+
 /*
  * SDL_SetMainReady must run before SDL initializes its application state.
  */
 static void AMSDL3SetMainReady(void) {
     AMRunSyncOnMain(^{
-        const char *nativeSubfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
-        if (nativeSubfolder == NULL || *nativeSubfolder == '\0') return;
-        NSString *frameworks = [NSString stringWithFormat:@"Frameworks/%s/libSDL3.dylib", nativeSubfolder];
-        const char *paths[] = {
-            [[@"@executable_path/" stringByAppendingString:frameworks] UTF8String],
-            [[@"@loader_path/" stringByAppendingString:frameworks] UTF8String],
-            NULL
+        NSString *subfolder = AMLWJGLNativeSubfolder();
+        NSString *paths[] = {
+            [NSString stringWithFormat:@"@executable_path/Frameworks/%@/libSDL3.dylib", subfolder],
+            [NSString stringWithFormat:@"@loader_path/Frameworks/%@/libSDL3.dylib", subfolder],
         };
 
-        for (int i = 0; paths[i] != NULL; i++) {
-            void *handle = dlopen(paths[i], RTLD_NOW | RTLD_LOCAL);
+        for (int i = 0; i < 2; i++) {
+            void *handle = dlopen(paths[i].UTF8String, RTLD_NOW | RTLD_LOCAL);
 
             if (handle == NULL)
                 continue;
@@ -438,10 +440,8 @@ static void AMSDL3SetMainReady(void) {
 
 static void AMSDL3SetMainReadyForControlify(void) {
     AMRunSyncOnMain(^{
-        const char *nativeSubfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
-        if (nativeSubfolder == NULL || *nativeSubfolder == '\0') return;
-        NSString *path = [NSString stringWithFormat:@"@executable_path/Frameworks/%s/libSDL3_controlify.dylib", nativeSubfolder];
-        void *handle = dlopen(path.UTF8String, RTLD_NOW | RTLD_LOCAL);
+        NSString *controlifyPath = [NSString stringWithFormat:@"@executable_path/Frameworks/%@/libSDL3_controlify.dylib", AMLWJGLNativeSubfolder()];
+        void *handle = dlopen(controlifyPath.UTF8String, RTLD_NOW | RTLD_LOCAL);
         if (handle == NULL) {
             NSLog(@"[SDL3] no private SDL copy for Controlify (libSDL3_controlify.dylib), controller mods will not work");
             return;
