@@ -49,7 +49,7 @@ static inline bool ame_renderer_uses_angle(ame_renderer_t r)
     return r == AME_RENDERER_AUTO || r == AME_RENDERER_GL4ES || r == AME_RENDERER_ANGLE || r == AME_RENDERER_MOBILEGLUES;
 }
 
-static inline bool isMobileGLRenderer(const char *renderer)
+static inline bool ame_renderer_is_mobile_gl(const char *renderer)
 {
     return ame_renderer_from_name(renderer) == AME_RENDERER_MOBILEGL;
 }
