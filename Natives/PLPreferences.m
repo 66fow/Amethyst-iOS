@@ -25,6 +25,9 @@
             @"mobilegl_fast_shader_load": @NO,
             @"mobilegl_buffer_compat": @NO,
             @"mobilegl_relaxed": @NO,
+            @"moltenvk_fast_math": @YES,
+            @"moltenvk_argument_buffers": @YES,
+            @"moltenvk_smooth_scaling": @NO,
             @"fullscreen_airplay": @YES,
             @"silence_other_audio": @NO,
             @"silence_with_switch": @NO,
@@ -149,7 +152,7 @@
     } else {
         NSDebugLog(@"[PLPreferences] Migrating to %@", self.globalPath.lastPathComponent);
         // Perform migration from v1 layout
-        self.globalPref = [PLPreferences defaultPrefForGlobal:YES];
+        self.globalPref = [NSMutableDictionary new];
         for (NSString *section in self.globalPref.allKeys) {
             for (NSString *key in self.globalPref[section].allKeys) {
                 id value = [PLPreferences getOldLayoutPreference:key from:oldPref];

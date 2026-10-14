@@ -20,12 +20,14 @@
 #include <stdatomic.h>
 
 #include "jni.h"
+#include "renderer_info.h"
 #include "glfw_keycodes.h"
 #include "ios_uikit_bridge.h"
 #include "utils.h"
 
 #include "JavaLauncher.h"
 #include "sdl3_hook.h"
+#include "ctxbridges/vk_bridge.h"
 
 jint (*orig_ProcessImpl_forkAndExec)(JNIEnv *env, jobject process, jint mode, jbyteArray helperpath, jbyteArray prog, jbyteArray argBlock, jint argc, jbyteArray envBlock, jint envc, jbyteArray dir, jintArray std_fds, jboolean redirectErrorStream);
 jlong (*orig_ProcessHandleImpl_isAlive0)(JNIEnv *env, jclass clazz, jlong jpid);
@@ -366,6 +368,8 @@ void pojavPumpEvents(void* window) {
         setInputReady = YES;
         CallbackBridge_nativeSetInputReady(YES);
     }
+    // Vulkan games submit on their own, so this is the only place to stop them while the app is inactive
+    if (AMVulkanNativeActive()) pojavWaitForAppForeground();
     //__android_log_print(ANDROID_LOG_INFO, "input_bridge_v3", "pojavPumpevents %d", eventCounter);
     if (!pollTaken) {
         // draining here keeps events that land between pump and rewind for the next poll

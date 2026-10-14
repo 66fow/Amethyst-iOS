@@ -1,6 +1,7 @@
 #import "GameSurfaceView.h"
 #import "LauncherPreferences.h"
 #import "PLProfiles.h"
+#import "renderer_info.h"
 #import "utils.h"
 
 @interface GameSurfaceView()
@@ -17,12 +18,9 @@
 }
 
 + (Class)layerClass {
-    NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
-    if (renderer && [renderer hasPrefix:@"libOSMesa"]) {
-        // Zink (Mesa) renderer uses a regular CALayer
+    if (ame_renderer_from_name([PLProfiles resolveKeyForCurrentProfile:@"renderer"].UTF8String) == AME_RENDERER_ZINK) {
         return CALayer.class;
     } else {
-        // Default to Metal-backed layer
         return CAMetalLayer.class;
     }
 }

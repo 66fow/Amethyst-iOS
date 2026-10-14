@@ -28,11 +28,6 @@ public class GLFWVulkan {
 
      /** PojavLauncher: stub or wrap all functions to equivalent Vulkan functions */
 
-    private static final ByteBuffer KHR_SURFACE = memASCII(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME);
-    private static final ByteBuffer METAL_SURFACE = memASCII("VK_EXT_metal_surface");
-    private static final ByteBuffer ANDROID_SURFACE = memASCII("VK_KHR_android_surface");
-    private static final PointerBuffer REQUIRED_INSTANCE_EXTENSIONS = createRequiredInstanceExtensions();
-
     static {
         if (Platform.get() == Platform.MACOSX) {
             setPath(VK.getFunctionProvider());
@@ -41,13 +36,6 @@ public class GLFWVulkan {
 
     protected GLFWVulkan() {
         throw new UnsupportedOperationException();
-    }
-
-    private static PointerBuffer createRequiredInstanceExtensions() {
-        ByteBuffer platformSurface = Platform.get() == Platform.MACOSX ? METAL_SURFACE : ANDROID_SURFACE;
-        return memAllocPointer(2)
-            .put(0, memAddress(KHR_SURFACE))
-            .put(1, memAddress(platformSurface));
     }
 
     // --- [ glfwInitVulkanLoader ] ---
@@ -82,6 +70,8 @@ public class GLFWVulkan {
         //invokePV(loader, __functionAddress);
     }
 
+    private static long requiredExtensions;
+
     // --- [ glfwVulkanSupported ] ---
 
     /**
@@ -101,7 +91,8 @@ public class GLFWVulkan {
      */
     @NativeType("int")
     public static boolean glfwVulkanSupported() {
-        return true;
+        // the launcher sets this to false when MoltenVK failed its startup check
+        return !"false".equals(System.getProperty("ame.vulkan.available"));
     }
 
     // --- [ glfwGetRequiredInstanceExtensions ] ---
@@ -132,8 +123,15 @@ public class GLFWVulkan {
      */
     @Nullable
     @NativeType("char const **")
-    public static PointerBuffer glfwGetRequiredInstanceExtensions() {
-        return REQUIRED_INSTANCE_EXTENSIONS.duplicate();
+    public static synchronized PointerBuffer glfwGetRequiredInstanceExtensions() {
+        if (requiredExtensions == 0L) {
+            String platformSurface = Platform.get() == Platform.MACOSX ? "VK_EXT_metal_surface" : "VK_KHR_android_surface";
+            // lives until exit like GLFW's own list, a MemoryStack frame here was never popped
+            PointerBuffer names = memAllocPointer(2);
+            names.put(memUTF8(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME)).put(memUTF8(platformSurface)).flip();
+            requiredExtensions = memAddress(names);
+        }
+        return PointerBuffer.create(requiredExtensions, 2);
     }
 
     /**
@@ -287,11 +285,14 @@ public class GLFWVulkan {
             check(surface, 1);
         }
         if (Platform.get() == Platform.MACOSX) {
-            VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
-                .calloc()
-                .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
-                .pLayer(PointerBuffer.create(window, 1));
-            return vkCreateMetalSurfaceEXT(instance, pCreateInfo, null, surface);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                // window is the CAMetalLayer pointer handed out by pojavCreateContext
+                VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
+                    .calloc(stack)
+                    .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
+                    .pLayer(PointerBuffer.create(window, 1));
+                return vkCreateMetalSurfaceEXT(instance, pCreateInfo, allocator, surface);
+            }
         } /* else {
             VkAndroidSurfaceCreateInfoKHR pCreateInfo = VkAndroidSurfaceCreateInfoKHR
                 .calloc()

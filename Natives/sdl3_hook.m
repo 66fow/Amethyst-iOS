@@ -9,6 +9,8 @@
 #include <os/lock.h>
 #include <objc/runtime.h>
 #include "jni.h"
+#include "renderer_info.h"
+#include "ctxbridges/vk_bridge.h"
 
 #import "GameSurfaceView.h"
 #import "SurfaceViewController.h"
@@ -153,8 +155,10 @@ void AmethystSDL3ApplyResolutionScale(void) {
 
     view.layer.contentsScale = scale;
     if ([view.layer isKindOfClass:CAMetalLayer.class] && view.bounds.size.width > 0 && view.bounds.size.height > 0) {
-        ((CAMetalLayer *)view.layer).drawableSize =
-            CGSizeMake(MAX(round(view.bounds.size.width * scale), 1), MAX(round(view.bounds.size.height * scale), 1));
+        // same rounding MoltenVK uses, so its swapchain is optimal
+        uint32_t w, h;
+        ame_vk_drawable_extent(view.bounds.size.width, view.bounds.size.height, scale, &w, &h);
+        ((CAMetalLayer *)view.layer).drawableSize = CGSizeMake(w, h);
     }
     [view setNeedsLayout];
 }

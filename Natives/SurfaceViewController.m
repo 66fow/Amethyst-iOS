@@ -21,10 +21,11 @@
 #import "TrackedTextField.h"
 #import "UIKit+hook.h"
 #import "ios_uikit_bridge.h"
+#import "ctxbridges/vk_bridge.h"
 
 #include "glfw_keycodes.h"
-#include "utils.h"
 #include "renderer_info.h"
+#include "utils.h"
 
 #include <dlfcn.h>
 
@@ -206,16 +207,51 @@ static GameSurfaceView* pojavWindow;
     self.swipeableButtons = [[NSMutableArray alloc] init];
 
     [KeyboardInput initKeycodeTable];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleMouseConnected:) name:GCMouseDidConnectNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleMouseDisconnected:) name:GCMouseDidDisconnectNotification object:nil];
-
+    self.mouseConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        NSLog(@"Input: Mouse connected!");
+        GCMouse* mouse = note.object;
+        [self registerMouseCallbacks:mouse];
+        self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
+        [self setNeedsUpdateOfPrefersPointerLocked];
+    }];
+    self.mouseDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        NSLog(@"Input: Mouse disconnected!");
+        GCMouse* mouse = note.object;
+        mouse.mouseInput.mouseMovedHandler = nil;
+        mouse.mouseInput.leftButton.pressedChangedHandler = nil;
+        mouse.mouseInput.middleButton.pressedChangedHandler = nil;
+        mouse.mouseInput.rightButton.pressedChangedHandler = nil;
+        [mouse.mouseInput.auxiliaryButtons makeObjectsPerformSelector:@selector(setPressedChangedHandler:) withObject:nil];
+        [self setNeedsUpdateOfPrefersPointerLocked];
+        if (getPrefBool(@"controll.hardware_hide")) {
+            self.ctrlView.hidden = NO;
+        }
+    }];
     if (GCMouse.current != nil) {
         [self registerMouseCallbacks:GCMouse.current];
     }
+    
 
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleControllerConnected:) name:GCControllerDidConnectNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleControllerDisconnected:) name:GCControllerDidDisconnectNotification object:nil];
-
+    // TODO: deal with multiple controllers by letting users decide which one to use?
+    self.controllerConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        NSLog(@"Input: Controller connected!");
+        GCController* controller = note.object;
+        [ControllerInput initKeycodeTable];
+        [ControllerInput registerControllerCallbacks:controller];
+        self.mousePointerView.hidden = isGrabbing;
+        virtualMouseEnabled = YES;
+        if (getPrefBool(@"control.hardware_hide")) {
+            self.ctrlView.hidden = YES;
+        }
+    }];
+    self.controllerDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        NSLog(@"Input: Controller disconnected!");
+        GCController* controller = note.object;
+        [ControllerInput unregisterControllerCallbacks:controller];
+        if (getPrefBool(@"control.hardware_hide")) {
+            self.ctrlView.hidden = NO;
+        }
+    }];
     if (GCController.controllers.count == 1) {
         [ControllerInput initKeycodeTable];
         [ControllerInput registerControllerCallbacks:GCController.controllers.firstObject];
@@ -341,9 +377,11 @@ static GameSurfaceView* pojavWindow;
     }
 
     resolutionScale = getPrefFloat(@"video.resolution") / 100.0;
-    // ANGLE sizes its drawable from bounds * contentsScale and ignores drawableSize
-    BOOL angleBacked = ame_renderer_uses_angle(ame_renderer_from_name(getenv("AME_RENDERER")));
-    self.surfaceView.layer.contentsScale = angleBacked ? self.screenScale * resolutionScale : self.screenScale;
+    // ANGLE sizes its drawable from bounds * contentsScale and ignores drawableSize, MoltenVK compares the two
+    ame_renderer_t renderer = ame_renderer_from_name(getenv("AME_RENDERER"));
+    BOOL vulkanNative = ame_renderer_is_vulkan_native(renderer) || AMVulkanNativeActive();
+    BOOL scaledByLayer = ame_renderer_uses_angle(renderer) || vulkanNative;
+    self.surfaceView.layer.contentsScale = scaledByLayer ? self.screenScale * resolutionScale : self.screenScale;
 
     physicalWidth = roundf(self.surfaceView.frame.size.width * self.screenScale);
     physicalHeight = roundf(self.surfaceView.frame.size.height * self.screenScale);
@@ -358,6 +396,15 @@ static GameSurfaceView* pojavWindow;
     }
     if ((windowHeight % 2) != 0) {
         --windowHeight;
+    }
+
+    if (vulkanNative) {
+        // must match what MoltenVK derives from the layer, see ame_vk_drawable_extent
+        uint32_t w, h;
+        ame_vk_drawable_extent(self.surfaceView.bounds.size.width, self.surfaceView.bounds.size.height,
+                               self.surfaceView.layer.contentsScale, &w, &h);
+        windowWidth = w;
+        windowHeight = h;
     }
 
     if ([self.surfaceView.layer isKindOfClass:CAMetalLayer.class]) {
@@ -672,50 +719,6 @@ static GameSurfaceView* pojavWindow;
     }
 }
 
-// Notification handlers (selector-based) to avoid block-based observers
-- (void)handleMouseConnected:(NSNotification *)note {
-    NSLog(@"Input: Mouse connected!");
-    GCMouse* mouse = note.object;
-    [self registerMouseCallbacks:mouse];
-    self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
-    [self setNeedsUpdateOfPrefersPointerLocked];
-}
-
-- (void)handleMouseDisconnected:(NSNotification *)note {
-    NSLog(@"Input: Mouse disconnected!");
-    GCMouse* mouse = note.object;
-    mouse.mouseInput.mouseMovedHandler = nil;
-    mouse.mouseInput.leftButton.pressedChangedHandler = nil;
-    mouse.mouseInput.middleButton.pressedChangedHandler = nil;
-    mouse.mouseInput.rightButton.pressedChangedHandler = nil;
-    [mouse.mouseInput.auxiliaryButtons makeObjectsPerformSelector:@selector(setPressedChangedHandler:) withObject:nil];
-    [self setNeedsUpdateOfPrefersPointerLocked];
-    if (getPrefBool(@"controll.hardware_hide")) {
-        self.ctrlView.hidden = NO;
-    }
-}
-
-- (void)handleControllerConnected:(NSNotification *)note {
-    NSLog(@"Input: Controller connected!");
-    GCController* controller = note.object;
-    [ControllerInput initKeycodeTable];
-    [ControllerInput registerControllerCallbacks:controller];
-    self.mousePointerView.hidden = isGrabbing;
-    virtualMouseEnabled = YES;
-    if (getPrefBool(@"control.hardware_hide")) {
-        self.ctrlView.hidden = YES;
-    }
-}
-
-- (void)handleControllerDisconnected:(NSNotification *)note {
-    NSLog(@"Input: Controller disconnected!");
-    GCController* controller = note.object;
-    [ControllerInput unregisterControllerCallbacks:controller];
-    if (getPrefBool(@"control.hardware_hide")) {
-        self.ctrlView.hidden = NO;
-    }
-}
-
 - (void)surfaceOnClick:(UITapGestureRecognizer *)sender {
     if (sender.state == UIGestureRecognizerStateBegan || sender.state == UIGestureRecognizerStateEnded){
         if(self.shouldTriggerHaptic) {
@@ -1007,3 +1010,77 @@ int touchesMovedCount;
     [super touchesBegan:touches withEvent:event];
     int i = 0;
     for (UITouch *touch in touches) {
+        if (touch.type == UITouchTypeIndirectPointer) {
+            continue; // handle this in a different place
+        }
+        CGPoint locationInView = [touch locationInView:self.rootView];
+        CGFloat screenScale = [[UIScreen mainScreen] scale];
+        currentHotbarSlot = self.enableHotbarGestures ?
+            callback_SurfaceViewController_touchHotbar(locationInView.x * screenScale, locationInView.y * screenScale) : -1;
+        if ([self isTouchInactive:self.hotbarTouch] && currentHotbarSlot != -1) {
+            self.hotbarTouch = touch;
+        }
+        if ([self isTouchInactive:self.primaryTouch] && currentHotbarSlot == -1) {
+            self.primaryTouch = touch;
+        }
+        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_DOWN];
+        break;
+    }
+}
+
+// Equals to Android ACTION_MOVE
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    [super touchesMoved:touches withEvent:event];
+
+    for (UITouch *touch in touches) {
+        if (touch.type == UITouchTypeIndirectPointer) {
+            if (!isGrabbing && !virtualMouseEnabled) {
+                CGPoint point = [touch locationInView:self.rootView];
+                [self sendTouchPoint:point withEvent:ACTION_MOVE];
+            }
+            continue; // handle this in a different place
+        }
+        if (self.hotbarTouch != touch && [self isTouchInactive:self.primaryTouch]) {
+            // Replace the inactive touch with the current active touch
+            self.primaryTouch = touch;
+            [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_DOWN];
+        }
+        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_MOVE];
+    }
+}
+
+// For ACTION_UP and ACTION_CANCEL
+- (void)touchesEndedGlobal:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    for (UITouch *touch in touches) {
+        if (touch.type == UITouchTypeIndirectPointer) {
+            continue; // handle this in a different place
+        }
+        [self sendTouchEvent:touch withUIEvent:event withEvent:ACTION_UP];
+    }
+}
+
+// Equals to Android ACTION_UP
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    [super touchesEnded:touches withEvent:event];
+    [self touchesEndedGlobal:touches withEvent:event];
+}
+
+// Equals to Android ACTION_CANCEL
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    [super touchesCancelled:touches withEvent:event];
+    [self touchesEndedGlobal:touches withEvent:event];
+}
+
++ (BOOL)isRunning {
+    return [UIWindow.mainWindow.rootViewController isKindOfClass:SurfaceViewController.class];
+}
+
++ (GameSurfaceView *)surface {
+    return pojavWindow;
+}
+
+@end

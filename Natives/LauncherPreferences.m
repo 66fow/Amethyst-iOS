@@ -1,4 +1,5 @@
 #import "config.h"
+#import "renderer_info.h"
 #import "utils.h"
 #import "LauncherPreferences.h"
 #import "PLPreferences.h"
@@ -140,7 +141,8 @@ NSArray* getRendererKeys(BOOL containsDefault) {
         @ RENDERER_NAME_MTL_ANGLE,
         @ RENDERER_NAME_MOBILEGLUES,
         @ RENDERER_NAME_MOBILEGL,
-        @ RENDERER_NAME_VK_ZINK
+        @ RENDERER_NAME_VK_ZINK,
+        @ RENDERER_NAME_MOLTENVK
     ].mutableCopy;
 
     if (containsDefault) {
@@ -159,7 +161,8 @@ NSArray* getRendererNames(BOOL containsDefault) {
         localize(@"preference.title.renderer.debug.angle", nil),
         localize(@"preference.title.renderer.debug.mg", nil),
         localize(@"preference.title.renderer.debug.mobilegl", nil),
-        localize(@"preference.title.renderer.debug.zink", nil)
+        localize(@"preference.title.renderer.debug.zink", nil),
+        localize(@"preference.title.renderer.debug.moltenvk", nil)
     ].mutableCopy;
 
     if (containsDefault) {

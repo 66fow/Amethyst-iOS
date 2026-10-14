@@ -8,6 +8,7 @@
 #define RENDERER_NAME_MOBILEGLUES "libmobileglues.dylib"
 #define RENDERER_NAME_MOBILEGL "libMobileGL.dylib"
 #define RENDERER_NAME_VK_ZINK "libOSMesa.8.dylib"
+#define RENDERER_NAME_MOLTENVK "libMoltenVK.dylib"
 
 typedef enum {
     AME_RENDERER_UNKNOWN,
@@ -16,7 +17,8 @@ typedef enum {
     AME_RENDERER_ANGLE,
     AME_RENDERER_MOBILEGLUES,
     AME_RENDERER_MOBILEGL,
-    AME_RENDERER_ZINK
+    AME_RENDERER_ZINK,
+    AME_RENDERER_MOLTENVK
 } ame_renderer_t;
 
 static inline ame_renderer_t ame_renderer_from_name(const char *name)
@@ -27,6 +29,7 @@ static inline ame_renderer_t ame_renderer_from_name(const char *name)
     if (!strcmp(name, RENDERER_NAME_MTL_ANGLE)) return AME_RENDERER_ANGLE;
     if (!strcmp(name, RENDERER_NAME_MOBILEGLUES)) return AME_RENDERER_MOBILEGLUES;
     if (!strcmp(name, RENDERER_NAME_MOBILEGL)) return AME_RENDERER_MOBILEGL;
+    if (!strcmp(name, RENDERER_NAME_MOLTENVK)) return AME_RENDERER_MOLTENVK;
     if (!strncmp(name, "libOSMesa", 9)) return AME_RENDERER_ZINK;
     return AME_RENDERER_UNKNOWN;
 }
@@ -49,7 +52,13 @@ static inline bool ame_renderer_uses_angle(ame_renderer_t r)
     return r == AME_RENDERER_AUTO || r == AME_RENDERER_GL4ES || r == AME_RENDERER_ANGLE || r == AME_RENDERER_MOBILEGLUES;
 }
 
-static inline bool ame_renderer_is_mobile_gl(const char *renderer)
+// games talk to MoltenVK directly, there is no GL context behind this one
+static inline bool ame_renderer_is_vulkan_native(ame_renderer_t r)
+{
+    return r == AME_RENDERER_MOLTENVK;
+}
+
+static inline bool isMobileGLRenderer(const char *renderer)
 {
     return ame_renderer_from_name(renderer) == AME_RENDERER_MOBILEGL;
 }

@@ -105,6 +105,7 @@ add_executable(AngelAuraAmethyst
   main_hook.m
   JavaLauncher.m
   LWJGLVersions.m
+  MoltenVKConfig.m
   sdl3_hook.m
   sdl3_gl_layer.m
   external/fishhook/fishhook.c
@@ -116,6 +117,8 @@ add_executable(AngelAuraAmethyst
 
   ctxbridges/gl_bridge.m
   ctxbridges/osm_bridge.m
+  ctxbridges/vk_bridge.m
+  ctxbridges/vk_preflight.c
 
   customcontrols/ControlButton.m
   customcontrols/ControlDrawer.m

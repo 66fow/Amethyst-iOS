@@ -1,6 +1,7 @@
 #import "SurfaceViewController.h"
 
 #include "jni.h"
+#include "renderer_info.h"
 #include <assert.h>
 #include <dlfcn.h>
 
@@ -16,9 +17,9 @@
 
 #include "glfw_keycodes.h"
 #include "ctxbridges/bridge_tbl.h"
+#include "ctxbridges/vk_bridge.h"
 #include "ctxbridges/osmesa_internal.h"
 #include "utils.h"
-#include "renderer_info.h"
 
 int clientAPI;
 
@@ -56,6 +57,14 @@ int pojavInitOpenGL() {
     if (kind == AME_RENDERER_AUTO) {
         kind = AME_RENDERER_GL4ES;
         name = RENDERER_NAME_GL4ES;
+        setenv("AME_RENDERER", name, 1);
+    }
+
+    // MoltenVK has no GL of its own, a game that wants one runs on ANGLE
+    if (kind == AME_RENDERER_MOLTENVK) {
+        AMVulkanNoteGLFallback();
+        kind = AME_RENDERER_ANGLE;
+        name = RENDERER_NAME_MTL_ANGLE;
         setenv("AME_RENDERER", name, 1);
     }
 
@@ -105,7 +114,7 @@ void pojavMakeCurrent(basic_render_window_t* window) {
 void* pojavCreateContext(basic_render_window_t* contextSrc) {
     if (clientAPI == GLFW_NO_API) {
         // Game has selected Vulkan API to render
-        return (__bridge void *)SurfaceViewController.surface.layer;
+        return AMVulkanSurfaceLayer();
     }
 
     static BOOL inited = NO;

@@ -14,7 +14,9 @@
 #include <mach/thread_status.h>
 #include <mach/exception_types.h>
 
+#include "renderer_info.h"
 #include "utils.h"
+#include "ctxbridges/vk_preflight.h"
 
 #import "ios_uikit_bridge.h"
 #import "JavaLauncher.h"
@@ -22,6 +24,7 @@
 #import "LWJGLVersions.h"
 #import "MinecraftOptionUtils.h"
 #import "MobileGLConfig.h"
+#import "MoltenVKConfig.h"
 #import "PLLogOutputView.h"
 #import "PLProfiles.h"
 #import "RendererCrashTracker.h"
@@ -175,6 +178,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSString *gameDir;
     NSString *defaultJRETag;
     AMLWJGLVersion *lwjgl = nil;
+    BOOL vulkanUnavailable = NO;
     NSCAssert(launchTarget, @"Unexpected nil launchTarget");
     if ([launchTarget isKindOfClass:NSDictionary.class]) {
         // Get preferred Java version from current profile
@@ -238,6 +242,24 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         } else {
             unsetenv("MOBILEGL_BACKEND_TYPE");
             unsetenv("MOBILEGL_LOG_FILE_PATH");
+        }
+
+        if (ame_renderer_is_vulkan_native(ame_renderer_from_name(renderer.UTF8String))) {
+            // env first, MoltenVK reads its config once on the first call into it
+            [MoltenVKConfig applyEnvironmentFromPreferences];
+            NSString *mvkPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/libMoltenVK.dylib"];
+            ame_vk_preflight_t pf = ame_vk_preflight(mvkPath.UTF8String);
+            if (pf.ok) {
+                NSLog(@"[MoltenVK] Vulkan %u.%u.%u, %@", pf.apiVersion >> 22, (pf.apiVersion >> 12) & 0x3ff, pf.apiVersion & 0xfff,
+                      [MoltenVKConfig activeConfigSummary]);
+            } else {
+                NSLog(@"[MoltenVK] preflight failed: %s", pf.error);
+                vulkanUnavailable = YES;
+                renderer = @"auto";
+                setenv("AME_RENDERER", "auto", 1);
+                showDialog(localize(@"renderer.moltenvk.unavailable.title", nil),
+                           [NSString stringWithFormat:localize(@"renderer.moltenvk.unavailable.message", nil), [NSString stringWithUTF8String:pf.error]]);
+            }
         }
 
         // MobileGlues wants a writable dir for its log/cache, the default one is android's /sdcard
@@ -373,11 +395,20 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     // Preset OpenGL libname
     const char *glLibName = getenv("AME_RENDERER");
     if (glLibName) {
-        if (!strcmp(glLibName, "auto")) {
-            // workaround only applies to 1.20.2+
+        if (!strcmp(glLibName, "auto") || ame_renderer_is_vulkan_native(ame_renderer_from_name(glLibName))) {
+            // workaround only applies to 1.20.2+, MoltenVK games that ask for GL land here too
             glLibName = RENDERER_NAME_MTL_ANGLE;
         }
         margv[++margc] = [NSString stringWithFormat:@"-Dorg.lwjgl.opengl.libname=%s", glLibName].UTF8String;
+    }
+
+    // read by GLFWVulkan.glfwVulkanSupported, absent means yes
+    if (vulkanUnavailable) margv[++margc] = "-Dame.vulkan.available=false";
+
+    // LWJGL's bare libMoltenVK.dylib lookup does not search Frameworks, so give it the bundled path
+    NSString *bundledVulkan = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/libMoltenVK.dylib"];
+    if ([fm fileExistsAtPath:bundledVulkan]) {
+        margv[++margc] = [NSString stringWithFormat:@"-Dame.vulkan.libpath=%@", bundledVulkan].UTF8String;
     }
 
     NSString *librariesPath = [NSString stringWithFormat:@"%@/libs", NSBundle.mainBundle.bundlePath];
