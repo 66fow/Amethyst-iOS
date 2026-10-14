@@ -3,23 +3,19 @@
 #import "SurfaceViewController.h"
 
 #include <dlfcn.h>
+#include <limits.h>
 #include <string.h>
 #include "bridge_tbl.h"
 #include "environ.h"
 #include "gl_bridge.h"
+#include "renderer_info.h"
 #include "utils.h"
 
 static EGLDisplay g_EglDisplay;
 static egl_library handle;
 
-static BOOL gl_is_mobilegl_renderer() {
-    return isMobileGLRenderer(getenv("AME_RENDERER"));
-}
-
-static BOOL gl_use_mobileglues_egl() {
-    const char *renderer = getenv("AME_RENDERER");
-    return renderer && !strcmp(renderer, RENDERER_NAME_MOBILEGLUES);
-}
+// resolved once in set_gl_bridge_tbl, AME_RENDERER is final by then
+static ame_renderer_t gl_renderer = AME_RENDERER_UNKNOWN;
 
 static void* load_egl_symbol(void *dl_handle, const char *symbol) {
     dlerror();
@@ -33,8 +29,7 @@ static void* load_egl_symbol(void *dl_handle, const char *symbol) {
 
 static bool dlsym_EGL() {
     const char *renderer = getenv("AME_RENDERER");
-    BOOL ownEgl = gl_is_mobilegl_renderer() || gl_use_mobileglues_egl();
-    const char *eglLibrary = ownEgl ? renderer : RENDERER_NAME_MTL_ANGLE;
+    const char *eglLibrary = ame_renderer_owns_egl(gl_renderer) ? renderer : RENDERER_NAME_MTL_ANGLE;
     NSString *eglPath = [NSString stringWithFormat:@"@rpath/%s", eglLibrary ?: ""];
     void* dl_handle = dlopen(eglPath.UTF8String, RTLD_NOW | RTLD_GLOBAL);
     if (!dl_handle) {
@@ -90,11 +85,9 @@ static bool gl_init() {
 gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     gl_render_window_t* bundle = calloc(1, sizeof(gl_render_window_t));
 
-    NSString *renderer = NSProcessInfo.processInfo.environment[@"AME_RENDERER"];
-    BOOL angleDesktopGL = [renderer isEqualToString:@ RENDERER_NAME_MTL_ANGLE];
-    BOOL mobileGL = gl_is_mobilegl_renderer();
-    BOOL mgEgl = gl_use_mobileglues_egl();
-    BOOL desktopGL = angleDesktopGL || mobileGL || mgEgl;
+    BOOL mobileGL = gl_renderer == AME_RENDERER_MOBILEGL;
+    BOOL mgEgl = gl_renderer == AME_RENDERER_MOBILEGLUES;
+    BOOL desktopGL = ame_renderer_is_desktop_gl(gl_renderer);
 
     const EGLint attribs[] = {
         EGL_RED_SIZE, 8,
@@ -183,7 +176,12 @@ gl_render_window_t* gl_init_context(gl_render_window_t *share) {
     return bundle;
 }
 
+// last interval handed to the driver, the new surface starts out unknown
+static int gl_last_swap_interval = INT_MIN;
+
 void gl_make_current(gl_render_window_t* bundle) {
+    // already bound on this thread, nothing for EGL to do
+    if (bundle && (basic_render_window_t *)bundle == currentBundle) return;
     if(!bundle) {
         if(handle.eglMakeCurrent(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)) {
             currentBundle = NULL;
@@ -193,6 +191,7 @@ void gl_make_current(gl_render_window_t* bundle) {
 
     if(handle.eglMakeCurrent(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
         currentBundle = (basic_render_window_t *)bundle;
+        gl_last_swap_interval = INT_MIN;
     } else {
         NSLog(@"EGLBridge: eglMakeCurrent returned with error: 0x%x", handle.eglGetError());
     }
@@ -212,6 +211,8 @@ void gl_swap_buffers() {
 }
 
 void gl_swap_interval(int swapInterval) {
+    if (swapInterval == gl_last_swap_interval) return;
+    gl_last_swap_interval = swapInterval;
     handle.eglSwapInterval(g_EglDisplay, swapInterval);
 }
 
@@ -223,11 +224,13 @@ void gl_terminate() {
     }
     handle.eglTerminate(g_EglDisplay);
     handle.eglReleaseThread();
+    gl_last_swap_interval = INT_MIN;
     free(currentBundle);
     currentBundle = nil;
 }
 
 void set_gl_bridge_tbl() {
+    gl_renderer = ame_renderer_from_name(getenv("AME_RENDERER"));
     br_init = gl_init;
     br_init_context = (br_init_context_t) gl_init_context;
     br_make_current = (br_make_current_t) gl_make_current;

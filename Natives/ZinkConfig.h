@@ -38,10 +38,12 @@ typedef NS_ENUM(NSInteger, AppleGPUGeneration) {
     AppleGPUGenerationA16 = 16,
     AppleGPUGenerationA17 = 17,
     AppleGPUGenerationA18 = 18,
+    AppleGPUGenerationA19 = 19,
     AppleGPUGenerationM1 = 101,
     AppleGPUGenerationM2 = 102,
     AppleGPUGenerationM3 = 103,
-    AppleGPUGenerationM4 = 104
+    AppleGPUGenerationM4 = 104,
+    AppleGPUGenerationM5 = 105
 };
 
 @interface ZinkConfig : NSObject

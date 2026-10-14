@@ -205,6 +205,24 @@
               @"type": self.typeSwitch,
               @"enableCondition": whenNotInGame
             },
+            @{@"key": @"moltenvk_fast_math",
+              @"hasDetail": @YES,
+              @"icon": @"bolt",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
+            @{@"key": @"moltenvk_argument_buffers",
+              @"hasDetail": @YES,
+              @"icon": @"square.grid.3x3",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
+            @{@"key": @"moltenvk_smooth_scaling",
+              @"hasDetail": @YES,
+              @"icon": @"arrow.up.left.and.arrow.down.right",
+              @"type": self.typeSwitch,
+              @"enableCondition": whenNotInGame
+            },
             @{@"key": @"fullscreen_airplay",
               @"hasDetail": @YES,
               @"icon": @"airplayvideo",

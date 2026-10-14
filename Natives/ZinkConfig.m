@@ -65,6 +65,11 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
         @"iPhone17,2": @(AppleGPUGenerationA18),
         @"iPhone17,3": @(AppleGPUGenerationA18),
         @"iPhone17,4": @(AppleGPUGenerationA18),
+        @"iPhone17,5": @(AppleGPUGenerationA18),
+        @"iPhone18,1": @(AppleGPUGenerationA19),
+        @"iPhone18,2": @(AppleGPUGenerationA19),
+        @"iPhone18,3": @(AppleGPUGenerationA19),
+        @"iPhone18,4": @(AppleGPUGenerationA19),
 
         @"iPad6,11": @(AppleGPUGenerationA9),
         @"iPad6,12": @(AppleGPUGenerationA9),
@@ -84,8 +89,8 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
         @"iPad11,4": @(AppleGPUGenerationA12),
         @"iPad11,6": @(AppleGPUGenerationA12),
         @"iPad11,7": @(AppleGPUGenerationA12),
-        @"iPad13,1": @(AppleGPUGenerationM1),
-        @"iPad13,2": @(AppleGPUGenerationM1),
+        @"iPad13,1": @(AppleGPUGenerationA14),
+        @"iPad13,2": @(AppleGPUGenerationA14),
         @"iPad13,4": @(AppleGPUGenerationM1),
         @"iPad13,5": @(AppleGPUGenerationM1),
         @"iPad13,6": @(AppleGPUGenerationM1),
@@ -96,33 +101,51 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
         @"iPad13,11": @(AppleGPUGenerationM1),
         @"iPad13,16": @(AppleGPUGenerationM1),
         @"iPad13,17": @(AppleGPUGenerationM1),
-        @"iPad13,18": @(AppleGPUGenerationM1),
-        @"iPad13,19": @(AppleGPUGenerationM1),
-        @"iPad14,1": @(AppleGPUGenerationA14),
-        @"iPad14,2": @(AppleGPUGenerationA14),
+        @"iPad13,18": @(AppleGPUGenerationA14),
+        @"iPad13,19": @(AppleGPUGenerationA14),
+        @"iPad14,1": @(AppleGPUGenerationA15),
+        @"iPad14,2": @(AppleGPUGenerationA15),
         @"iPad14,3": @(AppleGPUGenerationM2),
         @"iPad14,4": @(AppleGPUGenerationM2),
-        @"iPad14,5": @(AppleGPUGenerationA15),
-        @"iPad14,6": @(AppleGPUGenerationA15),
+        @"iPad14,5": @(AppleGPUGenerationM2),
+        @"iPad14,6": @(AppleGPUGenerationM2),
+        @"iPad14,8": @(AppleGPUGenerationM2),
+        @"iPad14,9": @(AppleGPUGenerationM2),
+        @"iPad14,10": @(AppleGPUGenerationM2),
+        @"iPad14,11": @(AppleGPUGenerationM2),
+        @"iPad15,3": @(AppleGPUGenerationM3),
+        @"iPad15,4": @(AppleGPUGenerationM3),
+        @"iPad15,5": @(AppleGPUGenerationM3),
+        @"iPad15,6": @(AppleGPUGenerationM3),
+        @"iPad15,7": @(AppleGPUGenerationA16),
+        @"iPad15,8": @(AppleGPUGenerationA16),
+        @"iPad16,1": @(AppleGPUGenerationA17),
+        @"iPad16,2": @(AppleGPUGenerationA17),
+        @"iPad16,3": @(AppleGPUGenerationM4),
+        @"iPad16,4": @(AppleGPUGenerationM4),
+        @"iPad16,5": @(AppleGPUGenerationM4),
+        @"iPad16,6": @(AppleGPUGenerationM4),
     };
 
     NSNumber *genNum = deviceMap[machine];
     if (genNum) {
         _cachedGPUGeneration = (AppleGPUGeneration)[genNum integerValue];
     } else {
-        NSString *model = UIDevice.currentDevice.model;
-        if ([model containsString:@"iPad"]) {
-            if ([machine containsString:@"iPad8"] || [machine containsString:@"iPad13"]) {
-                _cachedGPUGeneration = AppleGPUGenerationM1;
-            } else if ([machine containsString:@"iPad14"]) {
-                if ([[machine substringFromIndex:7] intValue] >= 3) {
-                    _cachedGPUGeneration = AppleGPUGenerationM2;
-                } else {
-                    _cachedGPUGeneration = AppleGPUGenerationA14;
-                }
-            } else {
-                _cachedGPUGeneration = AppleGPUGenerationA12;
-            }
+        // not in the table, usually a device newer than this list: go by the hardware family number
+        int family = 0;
+        BOOL isPad = [machine hasPrefix:@"iPad"];
+        sscanf(machine.UTF8String, isPad ? "iPad%d," : "iPhone%d,", &family);
+        if (isPad) {
+            if (family >= 17) _cachedGPUGeneration = AppleGPUGenerationM5;
+            else if (family == 16) _cachedGPUGeneration = AppleGPUGenerationM4;
+            else if (family == 15) _cachedGPUGeneration = AppleGPUGenerationM3;
+            else if (family == 14) _cachedGPUGeneration = AppleGPUGenerationM2;
+            else if (family >= 8) _cachedGPUGeneration = AppleGPUGenerationM1;
+            else _cachedGPUGeneration = AppleGPUGenerationA12;
+        } else if (family >= 18) {
+            _cachedGPUGeneration = AppleGPUGenerationA19;
+        } else if (family == 17) {
+            _cachedGPUGeneration = AppleGPUGenerationA18;
         } else {
             _cachedGPUGeneration = AppleGPUGenerationA14;
         }
@@ -142,10 +165,12 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
         case AppleGPUGenerationA16: return @"A16";
         case AppleGPUGenerationA17: return @"A17 Pro";
         case AppleGPUGenerationA18: return @"A18";
+        case AppleGPUGenerationA19: return @"A19";
         case AppleGPUGenerationM1:  return @"M1";
         case AppleGPUGenerationM2:  return @"M2";
         case AppleGPUGenerationM3:  return @"M3";
         case AppleGPUGenerationM4:  return @"M4";
+        case AppleGPUGenerationM5:  return @"M5";
         default: return @"Unknown";
     }
 }
@@ -192,10 +217,12 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
 
         case AppleGPUGenerationA17:
         case AppleGPUGenerationA18:
+        case AppleGPUGenerationA19:
         case AppleGPUGenerationM1:
         case AppleGPUGenerationM2:
         case AppleGPUGenerationM3:
         case AppleGPUGenerationM4:
+        case AppleGPUGenerationM5:
             features |= ZinkAPIFeatureTessellationShader;
             features |= ZinkAPIFeatureGeometryShader;
             features |= ZinkAPIFeatureComputeShader;
@@ -234,10 +261,12 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
         case AppleGPUGenerationA16:
         case AppleGPUGenerationA17:
         case AppleGPUGenerationA18:
+        case AppleGPUGenerationA19:
         case AppleGPUGenerationM1:
         case AppleGPUGenerationM2:
         case AppleGPUGenerationM3:
         case AppleGPUGenerationM4:
+        case AppleGPUGenerationM5:
             return ZinkOptimizationLevelUltra;
         default:
             return ZinkOptimizationLevelMedium;
@@ -472,7 +501,7 @@ static AppleGPUGeneration _cachedGPUGeneration = AppleGPUGenerationUnknown;
     // On A11 and older: disable MoltenVK command buffer prefilling to reduce GPU memory pressure
     AppleGPUGeneration gen = [self deviceGPUGeneration];
     if (gen <= AppleGPUGenerationA11) {
-        setenv("MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS", "0", 1);
+        setenv("MVK_CONFIG_PREFILL_METAL_COMMAND_BUFFERS", "0", 0);
     }
 
     // Set shader cache to a writable path (Documents/.mesa_shader_cache)

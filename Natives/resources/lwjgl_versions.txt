@@ -1,0 +1,6 @@
+# Bundled LWJGL versions, the one list the Makefiles and JavaLauncher read.
+# version  native-subfolder  [features]
+# jar source is JavaApp/libs/lwjgl-<version>, natives go in Frameworks/<native-subfolder>
+# sdl = ships lwjgl-sdl and libSDL3, lwjgl2 = ships the lwjglx layer for LWJGL 2 games
+3.3.3 lwjgl33 lwjgl2
+3.4.1 lwjgl34 sdl

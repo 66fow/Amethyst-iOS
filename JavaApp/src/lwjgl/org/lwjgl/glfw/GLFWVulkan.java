@@ -70,6 +70,8 @@ public class GLFWVulkan {
         //invokePV(loader, __functionAddress);
     }
 
+    private static long requiredExtensions;
+
     // --- [ glfwVulkanSupported ] ---
 
     /**
@@ -89,7 +91,8 @@ public class GLFWVulkan {
      */
     @NativeType("int")
     public static boolean glfwVulkanSupported() {
-        return true;
+        // the launcher sets this to false when MoltenVK failed its startup check
+        return !"false".equals(System.getProperty("ame.vulkan.available"));
     }
 
     // --- [ glfwGetRequiredInstanceExtensions ] ---
@@ -120,15 +123,15 @@ public class GLFWVulkan {
      */
     @Nullable
     @NativeType("char const **")
-    public static PointerBuffer glfwGetRequiredInstanceExtensions() {
-        MemoryStack stack = MemoryStack.stackPush();
-        String platformSurface;
-        if (Platform.get() == Platform.MACOSX) {
-            platformSurface = "VK_EXT_metal_surface";
-        } else {
-            platformSurface = "VK_KHR_android_surface";
+    public static synchronized PointerBuffer glfwGetRequiredInstanceExtensions() {
+        if (requiredExtensions == 0L) {
+            String platformSurface = Platform.get() == Platform.MACOSX ? "VK_EXT_metal_surface" : "VK_KHR_android_surface";
+            // lives until exit like GLFW's own list, a MemoryStack frame here was never popped
+            PointerBuffer names = memAllocPointer(2);
+            names.put(memUTF8(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME)).put(memUTF8(platformSurface)).flip();
+            requiredExtensions = memAddress(names);
         }
-        return stack.pointers(stack.UTF8(KHRSurface.VK_KHR_SURFACE_EXTENSION_NAME), stack.UTF8(platformSurface));
+        return PointerBuffer.create(requiredExtensions, 2);
     }
 
     /**
@@ -282,11 +285,14 @@ public class GLFWVulkan {
             check(surface, 1);
         }
         if (Platform.get() == Platform.MACOSX) {
-            VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
-                .calloc()
-                .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
-                .pLayer(PointerBuffer.create(window, 1));
-            return vkCreateMetalSurfaceEXT(instance, pCreateInfo, null, surface);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                // window is the CAMetalLayer pointer handed out by pojavCreateContext
+                VkMetalSurfaceCreateInfoEXT pCreateInfo = VkMetalSurfaceCreateInfoEXT
+                    .calloc(stack)
+                    .sType(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT)
+                    .pLayer(PointerBuffer.create(window, 1));
+                return vkCreateMetalSurfaceEXT(instance, pCreateInfo, allocator, surface);
+            }
         } /* else {
             VkAndroidSurfaceCreateInfoKHR pCreateInfo = VkAndroidSurfaceCreateInfoKHR
                 .calloc()

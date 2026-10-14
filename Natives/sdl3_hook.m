@@ -9,6 +9,8 @@
 #include <os/lock.h>
 #include <objc/runtime.h>
 #include "jni.h"
+#include "renderer_info.h"
+#include "ctxbridges/vk_bridge.h"
 
 #import "GameSurfaceView.h"
 #import "SurfaceViewController.h"
@@ -143,9 +145,8 @@ static void AMApplyPixelFilter(UIView *view) {
 // MoltenVK and ANGLE size their drawable from bounds * contentsScale, so the resolution setting has to live in the scale
 void AmethystSDL3ApplyResolutionScale(void) {
     UIView *view = gSDLView;
-    const char *renderer = getenv("AME_RENDERER");
     // MobileGL sizes its own surface
-    if (view == nil || (renderer != NULL && !strcmp(renderer, RENDERER_NAME_MOBILEGL))) return;
+    if (view == nil || isMobileGLRenderer(getenv("AME_RENDERER"))) return;
 
     CGFloat base = view.window.screen.scale;
     if (base <= 0) base = UIScreen.mainScreen.scale;
@@ -154,8 +155,10 @@ void AmethystSDL3ApplyResolutionScale(void) {
 
     view.layer.contentsScale = scale;
     if ([view.layer isKindOfClass:CAMetalLayer.class] && view.bounds.size.width > 0 && view.bounds.size.height > 0) {
-        ((CAMetalLayer *)view.layer).drawableSize =
-            CGSizeMake(MAX(round(view.bounds.size.width * scale), 1), MAX(round(view.bounds.size.height * scale), 1));
+        // same rounding MoltenVK uses, so its swapchain is optimal
+        uint32_t w, h;
+        ame_vk_drawable_extent(view.bounds.size.width, view.bounds.size.height, scale, &w, &h);
+        ((CAMetalLayer *)view.layer).drawableSize = CGSizeMake(w, h);
     }
     [view setNeedsLayout];
 }
@@ -386,19 +389,25 @@ static void AMInstallUIKitObservers(void) {
     AMTrace(@"[SDL3 EMBED] UIKit window observers installed");
 }
 
+// Frameworks subfolder of the LWJGL build JavaLauncher picked, empty when none was
+static NSString *AMLWJGLNativeSubfolder(void) {
+    const char *subfolder = getenv("AME_LWJGL_NATIVE_SUBFOLDER");
+    return (subfolder != NULL && *subfolder) ? @(subfolder) : @"";
+}
+
 /*
  * SDL_SetMainReady must run before SDL initializes its application state.
  */
 static void AMSDL3SetMainReady(void) {
     AMRunSyncOnMain(^{
-        const char *paths[] = {
-            "@executable_path/Frameworks/lwjgl34/libSDL3.dylib",
-            "@loader_path/Frameworks/lwjgl34/libSDL3.dylib",
-            NULL
+        NSString *subfolder = AMLWJGLNativeSubfolder();
+        NSString *paths[] = {
+            [NSString stringWithFormat:@"@executable_path/Frameworks/%@/libSDL3.dylib", subfolder],
+            [NSString stringWithFormat:@"@loader_path/Frameworks/%@/libSDL3.dylib", subfolder],
         };
 
-        for (int i = 0; paths[i] != NULL; i++) {
-            void *handle = dlopen(paths[i], RTLD_NOW | RTLD_LOCAL);
+        for (int i = 0; i < 2; i++) {
+            void *handle = dlopen(paths[i].UTF8String, RTLD_NOW | RTLD_LOCAL);
 
             if (handle == NULL)
                 continue;
@@ -435,7 +444,8 @@ static void AMSDL3SetMainReady(void) {
 
 static void AMSDL3SetMainReadyForControlify(void) {
     AMRunSyncOnMain(^{
-        void *handle = dlopen("@executable_path/Frameworks/lwjgl34/libSDL3_controlify.dylib", RTLD_NOW | RTLD_LOCAL);
+        NSString *controlifyPath = [NSString stringWithFormat:@"@executable_path/Frameworks/%@/libSDL3_controlify.dylib", AMLWJGLNativeSubfolder()];
+        void *handle = dlopen(controlifyPath.UTF8String, RTLD_NOW | RTLD_LOCAL);
         if (handle == NULL) {
             NSLog(@"[SDL3] no private SDL copy for Controlify (libSDL3_controlify.dylib), controller mods will not work");
             return;

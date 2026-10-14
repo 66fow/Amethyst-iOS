@@ -14,6 +14,12 @@ BRANCH      := $(shell git branch --show-current)
 COMMIT      := $(shell git log --oneline | sed '2,10000000d' | cut -b 1-7)
 PLATFORM    ?= 2
 
+# Bundled LWJGL versions, same list JavaApp/Makefile and JavaLauncher read.
+# LWJGL_PAIRS is version:native-subfolder.
+LWJGL_MANIFEST := $(SOURCEDIR)/Natives/resources/lwjgl_versions.txt
+LWJGL_PAIRS := $(shell awk '/^[ \t]*\#/ {next} NF {print $$1 ":" $$2}' $(LWJGL_MANIFEST))
+LWJGL_SUBS  := $(foreach p,$(LWJGL_PAIRS),$(word 2,$(subst :, ,$(p))))
+
 # Release vs Debug
 RELEASE ?= 0
 
@@ -32,7 +38,7 @@ ifeq (,$(BRANCH))
 BRANCH := unknown
 endif
 ifeq (,$(COMMIT))
-BRANCH := unknown
+COMMIT := unknown
 endif
 
 
@@ -157,6 +163,16 @@ METHOD_PACKAGE = \
 	if [ '$(SLIMMED)' = '1' ] || [ '$(SLIMMED_ONLY)' = '1' ]; then \
 		zip --symlinks -r $(OUTPUTDIR)/org.angelauramc.amethyst.slimmed-$(VERSION)-$(PLATFORM_NAME)$$IPA_SUFFIX Payload --exclude='Payload/AngelAuraAmethyst.app/java_runtimes/*'; \
 	fi
+
+# Copies JavaApp/build jars into $(2)/libs, LWJGL ones into their native subfolder.
+METHOD_LWJGL_JARS = \
+	for f in $(SOURCEDIR)/JavaApp/build/*.jar; do \
+		b=$$(basename "$$f"); dest=$(2)/libs; \
+		for p in $(LWJGL_PAIRS); do \
+			if [ "$$b" = "lwjgl-$${p%%:*}.jar" ]; then dest=$(2)/libs/$${p\#*:}; fi; \
+		done; \
+		$(1) "$$f" "$$dest/" || exit 1; \
+	done
 
 # Function to download and unpack Java runtimes.
 METHOD_JAVA_UNPACK = \
@@ -406,29 +422,18 @@ payload: native dep_mg dep_mobilegl dep_mcmetal java jre assets
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo17)
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/AngelAuraAmethyst.app/Base.lproj/ || exit 1
 	cp -R $(SOURCEDIR)/Natives/resources/* $(WORKINGDIR)/AngelAuraAmethyst.app/ || exit
-	if [ -d $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl33 ]; then \
-		for f in $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl33/*.dylib; do \
-			install_name_tool -id "@rpath/lwjgl33/$$(basename "$$f")" "$$f" || exit 1; \
+	for sub in $(LWJGL_SUBS); do \
+		d=$(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/$$sub; \
+		[ -d "$$d" ] || continue; \
+		if [ -f "$$d/libSDL3.dylib" ]; then cp "$$d/libSDL3.dylib" "$$d/libSDL3_controlify.dylib" || exit 1; fi; \
+		for f in "$$d"/*.dylib; do \
+			install_name_tool -id "@rpath/$$sub/$$(basename "$$f")" "$$f" || exit 1; \
 		done; \
-	fi
-	if [ -f $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl34/libSDL3.dylib ]; then \
-		cp $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl34/libSDL3.dylib $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl34/libSDL3_controlify.dylib || exit 1; \
-	fi
-	if [ -d $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl34 ]; then \
-		for f in $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/lwjgl34/*.dylib; do \
-			install_name_tool -id "@rpath/lwjgl34/$$(basename "$$f")" "$$f" || exit 1; \
-		done; \
-	fi
+	done
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
-	mkdir -p $(WORKINGDIR)/AngelAuraAmethyst.app/libs/lwjgl33 $(WORKINGDIR)/AngelAuraAmethyst.app/libs/lwjgl34
-	for f in $(SOURCEDIR)/JavaApp/build/*.jar; do \
-		case "$$(basename "$$f")" in \
-			lwjgl-3.3.3.jar) cp "$$f" $(WORKINGDIR)/AngelAuraAmethyst.app/libs/lwjgl33/ || exit 1 ;; \
-			lwjgl-3.4.1.jar) cp "$$f" $(WORKINGDIR)/AngelAuraAmethyst.app/libs/lwjgl34/ || exit 1 ;; \
-			*) cp "$$f" $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1 ;; \
-		esac; \
-	done
+	for sub in $(LWJGL_SUBS); do mkdir -p $(WORKINGDIR)/AngelAuraAmethyst.app/libs/$$sub || exit 1; done
+	$(call METHOD_LWJGL_JARS,cp,$(WORKINGDIR)/AngelAuraAmethyst.app)
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo17 || exit 1
 	$(call METHOD_DIRCHECK,$(OUTPUTDIR)/Payload)
@@ -459,14 +464,8 @@ deploy:
 		ldid -S$(SOURCEDIR)/entitlements.trollstore.xml $(WORKINGDIR)/AngelAuraAmethyst.app/AngelAuraAmethyst || exit 1; \
 		sudo mv $(WORKINGDIR)/*.dylib $(PREFIX)Applications/AngelAuraAmethyst.app/Frameworks/ || exit 1; \
 		sudo mv $(WORKINGDIR)/AngelAuraAmethyst.app/AngelAuraAmethyst $(PREFIX)Applications/AngelAuraAmethyst.app/AngelAuraAmethyst || exit 1; \
-		sudo mkdir -p $(PREFIX)Applications/AngelAuraAmethyst.app/libs/lwjgl33 $(PREFIX)Applications/AngelAuraAmethyst.app/libs/lwjgl34 || exit 1; \
-		for f in $(SOURCEDIR)/JavaApp/build/*.jar; do \
-			case "$$(basename "$$f")" in \
-				lwjgl-3.3.3.jar) sudo mv "$$f" $(PREFIX)Applications/AngelAuraAmethyst.app/libs/lwjgl33/ || exit 1 ;; \
-				lwjgl-3.4.1.jar) sudo mv "$$f" $(PREFIX)Applications/AngelAuraAmethyst.app/libs/lwjgl34/ || exit 1 ;; \
-				*) sudo mv "$$f" $(PREFIX)Applications/AngelAuraAmethyst.app/libs/ || exit 1 ;; \
-			esac; \
-		done; \
+		for sub in $(LWJGL_SUBS); do sudo mkdir -p $(PREFIX)Applications/AngelAuraAmethyst.app/libs/$$sub || exit 1; done; \
+		$(call METHOD_LWJGL_JARS,sudo mv,$(PREFIX)Applications/AngelAuraAmethyst.app); \
 		cd $(PREFIX)Applications/AngelAuraAmethyst.app/Frameworks || exit 1; \
 		sudo chown -R 501:501 $(PREFIX)Applications/AngelAuraAmethyst.app/* || exit 1; \
 	elif [ '$(IOS)' = '0' ] && [ '$(DETECTPLAT)' = 'Darwin' ]; then \
@@ -475,9 +474,9 @@ deploy:
 		else \
 			$(call METHOD_PACKAGE); \
 			if [ '$(SLIMMED_ONLY)' = '0' ]; then \
-				open $(OUTPUTDIR)/net.kdt.pojavlauncher-$(VERSION)-$(PLATFORM_NAME).ipa; \
+				open $(OUTPUTDIR)/org.angelauramc.amethyst-$(VERSION)-$(PLATFORM_NAME).ipa; \
 			else \
-				open $(OUTPUTDIR)/net.kdt.pojavlauncher.slimmed-$(VERSION)-$(PLATFORM_NAME).ipa; \
+				open $(OUTPUTDIR)/org.angelauramc.amethyst.slimmed-$(VERSION)-$(PLATFORM_NAME).ipa; \
 			fi; \
 		fi \
 	else \

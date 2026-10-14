@@ -96,6 +96,10 @@
 "login.menu.sendlogs" = "Send your logs";
 "renderer.crash_fallback.title" = "Repeated Launch Failures";
 "renderer.crash_fallback.message" = "The last %lu launches with %@ didn't finish starting up. If this keeps happening, try switching renderers in Settings → Video and Renderer.";
+"renderer.moltenvk.unavailable.title" = "Vulkan Unavailable";
+"renderer.moltenvk.unavailable.message" = "The MoltenVK renderer could not start on this device: %@. Amethyst switched to Auto for this launch. You can pick another renderer in Settings → Video and Renderer.";
+"renderer.moltenvk.gl_fallback.title" = "Switched to ANGLE";
+"renderer.moltenvk.gl_fallback.message" = "This game asked for OpenGL, which the MoltenVK renderer does not provide. Amethyst is using ANGLE for this launch. To change this, pick a renderer in Settings → Video and Renderer.";
 "login.option.add" = "Add account";
 "login.option.select" = "Select account";
 "login.option.demo" = "Demo account";
@@ -188,6 +192,7 @@
 "preference.title.renderer.debug.mg" = "MobileGlues (1.17+) - exports OpenGL 4.0,";
 "preference.title.renderer.debug.zink" = "Zink (Mesa 25.0) - exports OpenGL 4.1";
 "preference.title.renderer.debug.mobilegl" = "MobileGL Vulkan (1.17+) - exports OpenGL 4.6, EXPERIMENTAL";
+"preference.title.renderer.debug.moltenvk" = "MoltenVK (Vulkan) (26.2+) - exports Vulkan 1.4 EXPERIMENTAL";
 
 "preference.detail.renderer" = "Change the OpenGL render engine to use. Zink is temporarily disabled on iOS 16 and later to diagnose issues.";
 
@@ -208,6 +213,12 @@
 
 "preference.title.mobilegl_relaxed" = "MobileGL: relaxed OpenGL rules";
 "preference.detail.mobilegl_relaxed" = "Skips some of the strict core profile checks. Turn on if an older mod crashes or draws nothing. MobileGL only.";
+"preference.title.moltenvk_fast_math" = "MoltenVK: fast math";
+"preference.detail.moltenvk_fast_math" = "Speeds up shader math on the GPU. Turn off if the game shows wrong colors or flickering textures.";
+"preference.title.moltenvk_argument_buffers" = "MoltenVK: argument buffers";
+"preference.detail.moltenvk_argument_buffers" = "Uses Metal argument buffers for faster resource binding. Turn off if the game crashes on launch or shows a black screen.";
+"preference.title.moltenvk_smooth_scaling" = "MoltenVK: smooth scaling";
+"preference.detail.moltenvk_smooth_scaling" = "Smooths the image when the resolution is lowered below 100%. Turn off for crisp pixel edges.";
 
 "preference.title.fullscreen_airplay" = "Fullscreen AirPlay";
 "preference.detail.fullscreen_airplay" = "Allows presenting fullscreen game window on the external display rather than mirroring everything on screen.";

@@ -2,6 +2,7 @@
 #import "SurfaceViewController.h"
 
 #include <dlfcn.h>
+#include <stdatomic.h>
 #include "environ.h"
 #include "utils.h"
 
@@ -58,6 +59,7 @@ void osm_apply_current_ll() {
 
 void osm_make_current(osm_render_window_t* bundle) {
     if(!bundle) {
+        if (!currentBundle) return;
         free(currentBundle->osm.buffer);
         CGColorSpaceRelease(currentBundle->osm.color_space);
         currentBundle->osm.buffer = NULL;
@@ -70,21 +72,28 @@ void osm_make_current(osm_render_window_t* bundle) {
     }
 
     currentBundle = (basic_render_window_t *)bundle;
-    currentBundle->osm.color_space = CGColorSpaceCreateDeviceRGB();
+    if (!currentBundle->osm.color_space) currentBundle->osm.color_space = CGColorSpaceCreateDeviceRGB();
     osm_apply_current_ll();
 }
 
+// set while a frame is queued for the main thread, the next swap is dropped instead of stacking up blocks
+static _Atomic bool osm_frame_pending;
+
 void osm_swap_buffers() {
     pojavWaitForAppForeground();
+    if (!currentBundle) return;
     osm_apply_current_ll();
+    if (atomic_exchange(&osm_frame_pending, true)) return;
     handle.glFinish(); // this will force osmesa to write the last rendered image into the buffer
     osm_render_window_t bundle = currentBundle->osm;
     dispatch_async(dispatch_get_main_queue(), ^{
-    CGDataProviderRef bitmapProvider = CGDataProviderCreateWithData(NULL, bundle.buffer, windowWidth * windowHeight * 4, NULL);
-    CGImageRef bitmap = CGImageCreate(windowWidth, windowHeight, 8, 32, 4 * windowWidth, bundle.color_space, kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault, bitmapProvider, NULL, FALSE, kCGRenderingIntentDefault);
+    // size comes from the bundle, windowWidth can already be a different value by now
+    CGDataProviderRef bitmapProvider = CGDataProviderCreateWithData(NULL, bundle.buffer, bundle.width * bundle.height * 4, NULL);
+    CGImageRef bitmap = CGImageCreate(bundle.width, bundle.height, 8, 32, 4 * bundle.width, bundle.color_space, kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault, bitmapProvider, NULL, FALSE, kCGRenderingIntentDefault);
     SurfaceViewController.surface.layer.contents = (__bridge id)bitmap;
     CGImageRelease(bitmap);
     CGDataProviderRelease(bitmapProvider);
+    atomic_store(&osm_frame_pending, false);
     });
 }
 

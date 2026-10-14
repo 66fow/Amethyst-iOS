@@ -16,15 +16,18 @@
 #include <dlfcn.h>
 #include <libgen.h>
 #include <stdlib.h>
+#include <os/lock.h>
 #include <stdatomic.h>
 
 #include "jni.h"
+#include "renderer_info.h"
 #include "glfw_keycodes.h"
 #include "ios_uikit_bridge.h"
 #include "utils.h"
 
 #include "JavaLauncher.h"
 #include "sdl3_hook.h"
+#include "ctxbridges/vk_bridge.h"
 
 jint (*orig_ProcessImpl_forkAndExec)(JNIEnv *env, jobject process, jint mode, jbyteArray helperpath, jbyteArray prog, jbyteArray argBlock, jint argc, jbyteArray envBlock, jint envc, jbyteArray dir, jintArray std_fds, jboolean redirectErrorStream);
 jlong (*orig_ProcessHandleImpl_isAlive0)(JNIEnv *env, jclass clazz, jlong jpid);
@@ -352,14 +355,32 @@ void handleFramebufferSizeJava(void* window, int w, int h) {
     (*env)->CallStaticVoidMethod(env, vmGlfwClass, method_internalWindowSizeChanged, (long)window, w, h);
 }
 
+// producers run on the UIKit threads, glfwPollEvents on the render thread
+static os_unfair_lock eventLock = OS_UNFAIR_LOCK_INIT;
+// events taken for the current poll, every window gets the same list until rewind
+static GLFWInputEvent pollEvents[8000];
+static size_t pollCount;
+static BOOL pollTaken;
+
 void pojavPumpEvents(void* window) {
     static BOOL setInputReady = NO;
     if(!setInputReady) {
         setInputReady = YES;
         CallbackBridge_nativeSetInputReady(YES);
     }
+    // Vulkan games submit on their own, so this is the only place to stop them while the app is inactive
+    if (AMVulkanNativeActive()) pojavWaitForAppForeground();
     //__android_log_print(ANDROID_LOG_INFO, "input_bridge_v3", "pojavPumpevents %d", eventCounter);
-    size_t counter = atomic_load_explicit(&eventCounter, memory_order_acquire);
+    if (!pollTaken) {
+        // draining here keeps events that land between pump and rewind for the next poll
+        os_unfair_lock_lock(&eventLock);
+        pollCount = atomic_load_explicit(&eventCounter, memory_order_acquire);
+        memcpy(pollEvents, events, pollCount * sizeof(GLFWInputEvent));
+        atomic_store_explicit(&eventCounter, 0, memory_order_release);
+        os_unfair_lock_unlock(&eventLock);
+        pollTaken = YES;
+    }
+    size_t counter = pollCount;
     if((cLastX != cursorX || cLastY != cursorY) && GLFW_invoke_CursorPos) {
         cLastX = cursorX;
         cLastY = cursorY;
@@ -367,7 +388,7 @@ void pojavPumpEvents(void* window) {
             GLFW_invoke_CursorPos(window, cursorX, cursorY);
     }
     for(size_t i = 0; i < counter; i++) {
-        GLFWInputEvent event = events[i];
+        GLFWInputEvent event = pollEvents[i];
         switch(event.type) {
             case EVENT_TYPE_CHAR:
                 if(GLFW_invoke_Char) GLFW_invoke_Char(window, event.i1);
@@ -399,10 +420,10 @@ void pojavPumpEvents(void* window) {
                 break;
         }
     }
-    atomic_store_explicit(&eventCounter, counter, memory_order_release);
 }
 void pojavRewindEvents() {
-    atomic_store_explicit(&eventCounter, 0, memory_order_release);
+    pollTaken = NO;
+    pollCount = 0;
 }
 
 JNIEXPORT void JNICALL
@@ -427,7 +448,8 @@ Java_org_lwjgl_glfw_GLFW_glfwSetCursorPos(JNIEnv *env, jclass clazz, jlong windo
 }
 
 void sendData(short type, int i1, int i2, short i3, short i4) {
-    size_t counter = atomic_load_explicit(&eventCounter, memory_order_acquire);
+    os_unfair_lock_lock(&eventLock);
+    size_t counter = atomic_load_explicit(&eventCounter, memory_order_relaxed);
     if (counter < 7999) {
         GLFWInputEvent *event = &events[counter++];
         event->type = type;
@@ -437,10 +459,12 @@ void sendData(short type, int i1, int i2, short i3, short i4) {
         event->i4 = i4;
     }
     atomic_store_explicit(&eventCounter, counter, memory_order_release);
+    os_unfair_lock_unlock(&eventLock);
 }
 
 void sendDataFloat(short type, float i1, float i2, short i3, short i4) {
-    size_t counter = atomic_load_explicit(&eventCounter, memory_order_acquire);
+    os_unfair_lock_lock(&eventLock);
+    size_t counter = atomic_load_explicit(&eventCounter, memory_order_relaxed);
     if (counter < 7999) {
         GLFWInputEvent *event = &events[counter++];
         event->type = type;
@@ -450,6 +474,7 @@ void sendDataFloat(short type, float i1, float i2, short i3, short i4) {
         event->i4 = i4;
     }
     atomic_store_explicit(&eventCounter, counter, memory_order_release);
+    os_unfair_lock_unlock(&eventLock);
 }
 
 void closeGLFWWindow() {
@@ -538,7 +563,7 @@ void CallbackBridge_nativeSetInputReady(BOOL inputReady) {
             GLFW_invoke_FramebufferSize((void*) showingWindow, windowWidth, windowHeight);
         }
         if (GLFW_invoke_WindowSize) {
-            GLFW_invoke_FramebufferSize((void*) showingWindow, windowWidth, windowHeight);
+            GLFW_invoke_WindowSize((void*) showingWindow, windowWidth, windowHeight);
         }
     }
 }
