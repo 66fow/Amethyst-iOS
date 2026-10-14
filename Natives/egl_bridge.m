@@ -18,6 +18,7 @@
 #include "ctxbridges/bridge_tbl.h"
 #include "ctxbridges/osmesa_internal.h"
 #include "utils.h"
+#include "renderer_info.h"
 
 int clientAPI;
 

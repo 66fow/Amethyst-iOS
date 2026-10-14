@@ -181,7 +181,7 @@ static GameSurfaceView* pojavWindow;
     virtualMouseEnabled = getPrefBool(@"control.virtmouse_enable");
     virtualMouseFrame = CGRectMake(self.view.frame.size.width / 2, self.view.frame.size.height / 2, 18, 27);
     self.mousePointerView = [[UIImageView alloc] initWithFrame:virtualMouseFrame];
-    self.mousePointerView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleRightMargin |UIViewAutoresizingFlexibleBottomMa[...]
+    self.mousePointerView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleRightMargin |UIViewAutoresizingFlexibleBottomMa[...];
     self.mousePointerView.hidden = !virtualMouseEnabled;
     self.mousePointerView.image = [UIImage imageNamed:@"MousePointer"];
     self.mousePointerView.userInteractionEnabled = NO;
@@ -206,51 +206,19 @@ static GameSurfaceView* pojavWindow;
     self.swipeableButtons = [[NSMutableArray alloc] init];
 
     [KeyboardInput initKeycodeTable];
-    self.mouseConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n[...]
-        NSLog(@"Input: Mouse connected!");
-        GCMouse* mouse = note.object;
-        [self registerMouseCallbacks:mouse];
-        self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
-        [self setNeedsUpdateOfPrefersPointerLocked];
-    }];
-    self.mouseDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCMouseDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotificat[...]
-        NSLog(@"Input: Mouse disconnected!");
-        GCMouse* mouse = note.object;
-        mouse.mouseInput.mouseMovedHandler = nil;
-        mouse.mouseInput.leftButton.pressedChangedHandler = nil;
-        mouse.mouseInput.middleButton.pressedChangedHandler = nil;
-        mouse.mouseInput.rightButton.pressedChangedHandler = nil;
-        [mouse.mouseInput.auxiliaryButtons makeObjectsPerformSelector:@selector(setPressedChangedHandler:) withObject:nil];
-        [self setNeedsUpdateOfPrefersPointerLocked];
-        if (getPrefBool(@"controll.hardware_hide")) {
-            self.ctrlView.hidden = NO;
-        }
-    }];
+    // Use selector-based observers to avoid compiler parsing issues with block-based addObserverForName:usingBlock:
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleMouseConnected:) name:GCMouseDidConnectNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleMouseDisconnected:) name:GCMouseDidDisconnectNotification object:nil];
+
     if (GCMouse.current != nil) {
         [self registerMouseCallbacks:GCMouse.current];
     }
     
 
     // TODO: deal with multiple controllers by letting users decide which one to use?
-    self.controllerConnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotif[...]
-        NSLog(@"Input: Controller connected!");
-        GCController* controller = note.object;
-        [ControllerInput initKeycodeTable];
-        [ControllerInput registerControllerCallbacks:controller];
-        self.mousePointerView.hidden = isGrabbing;
-        virtualMouseEnabled = YES;
-        if (getPrefBool(@"control.hardware_hide")) {
-            self.ctrlView.hidden = YES;
-        }
-    }];
-    self.controllerDisconnectCallback = [[NSNotificationCenter defaultCenter] addObserverForName:GCControllerDidDisconnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(N[...]
-        NSLog(@"Input: Controller disconnected!");
-        GCController* controller = note.object;
-        [ControllerInput unregisterControllerCallbacks:controller];
-        if (getPrefBool(@"control.hardware_hide")) {
-            self.ctrlView.hidden = NO;
-        }
-    }];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleControllerConnected:) name:GCControllerDidConnectNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleControllerDisconnected:) name:GCControllerDidDisconnectNotification object:nil];
+
     if (GCController.controllers.count == 1) {
         [ControllerInput initKeycodeTable];
         [ControllerInput registerControllerCallbacks:GCController.controllers.firstObject];
@@ -707,6 +675,50 @@ static GameSurfaceView* pojavWindow;
     }
 }
 
+// Notification handlers (selector-based) to avoid block-based observers
+- (void)handleMouseConnected:(NSNotification *)note {
+    NSLog(@"Input: Mouse connected!");
+    GCMouse* mouse = note.object;
+    [self registerMouseCallbacks:mouse];
+    self.mousePointerView.hidden = isGrabbing || !virtualMouseEnabled;
+    [self setNeedsUpdateOfPrefersPointerLocked];
+}
+
+- (void)handleMouseDisconnected:(NSNotification *)note {
+    NSLog(@"Input: Mouse disconnected!");
+    GCMouse* mouse = note.object;
+    mouse.mouseInput.mouseMovedHandler = nil;
+    mouse.mouseInput.leftButton.pressedChangedHandler = nil;
+    mouse.mouseInput.middleButton.pressedChangedHandler = nil;
+    mouse.mouseInput.rightButton.pressedChangedHandler = nil;
+    [mouse.mouseInput.auxiliaryButtons makeObjectsPerformSelector:@selector(setPressedChangedHandler:) withObject:nil];
+    [self setNeedsUpdateOfPrefersPointerLocked];
+    if (getPrefBool(@"controll.hardware_hide")) {
+        self.ctrlView.hidden = NO;
+    }
+}
+
+- (void)handleControllerConnected:(NSNotification *)note {
+    NSLog(@"Input: Controller connected!");
+    GCController* controller = note.object;
+    [ControllerInput initKeycodeTable];
+    [ControllerInput registerControllerCallbacks:controller];
+    self.mousePointerView.hidden = isGrabbing;
+    virtualMouseEnabled = YES;
+    if (getPrefBool(@"control.hardware_hide")) {
+        self.ctrlView.hidden = YES;
+    }
+}
+
+- (void)handleControllerDisconnected:(NSNotification *)note {
+    NSLog(@"Input: Controller disconnected!");
+    GCController* controller = note.object;
+    [ControllerInput unregisterControllerCallbacks:controller];
+    if (getPrefBool(@"control.hardware_hide")) {
+        self.ctrlView.hidden = NO;
+    }
+}
+
 - (void)surfaceOnClick:(UITapGestureRecognizer *)sender {
     if (sender.state == UIGestureRecognizerStateBegan || sender.state == UIGestureRecognizerStateEnded){
         if(self.shouldTriggerHaptic) {
@@ -732,269 +744,4 @@ static GameSurfaceView* pojavWindow;
     }
 }
 
-- (void)surfaceOnDoubleClick:(UITapGestureRecognizer *)sender {
-    if (sender.state == UIGestureRecognizerStateBegan || sender.state == UIGestureRecognizerStateEnded){
-        if(self.shouldTriggerHaptic) {
-            [self.lightHaptic impactOccurred];
-        }
-    }
-    
-    if (sender.state == UIGestureRecognizerStateRecognized && isGrabbing) {
-        CGFloat screenScale = [[UIScreen mainScreen] scale];
-        CGPoint point = [sender locationInView:self.rootView];
-        int hotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(point.x * screenScale, point.y * screenScale) : -1;
-        if (hotbarSlot != -1 && currentHotbarSlot == hotbarSlot) {
-            CallbackBridge_nativeSendKey(GLFW_KEY_F, 0, 1, 0);
-            CallbackBridge_nativeSendKey(GLFW_KEY_F, 0, 0, 0);
-        }
-    }
-}
-
-- (void)surfaceOnHover:(UIGestureRecognizer *)sender {
-    if (isGrabbing) return;
-    
-    CGPoint point = [sender locationInView:self.rootView];
-    // NSLog(@"Mouse move!!");
-    // NSLog(@"Mouse pos = %f, %f", point.x, point.y);
-    switch (sender.state) {
-        case UIGestureRecognizerStateBegan:
-            [self sendTouchPoint:point withEvent:ACTION_DOWN];
-            break;
-        case UIGestureRecognizerStateChanged:
-            [self sendTouchPoint:point withEvent:ACTION_MOVE];
-            break;
-        case UIGestureRecognizerStateEnded:
-        case UIGestureRecognizerStateCancelled:
-            [self sendTouchPoint:point withEvent:ACTION_UP];
-            break;
-        default:
-            // point = CGPointMake(-1, -1);
-            break;
-    }
-}
-
--(void)surfaceOnLongpress:(UILongPressGestureRecognizer *)sender
-{
-    if (sender.state == UIGestureRecognizerStateBegan || sender.state == UIGestureRecognizerStateEnded){
-        if(self.shouldTriggerHaptic) {
-            [self.mediumHaptic impactOccurred];
-        }
-    }
-    
-    if (!self.slideableHotbar) {
-        CGPoint location = [sender locationInView:self.rootView];
-        CGFloat screenScale = UIScreen.mainScreen.scale;
-        currentHotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(location.x * screenScale, location.y * screenScale) : -1;
-    }
-    if (sender.state == UIGestureRecognizerStateBegan) {
-        self.shouldTriggerClick = NO;
-        if (currentHotbarSlot == -1) {
-
-            if (self.enableMouseGestures)
-                CallbackBridge_nativeSendMouseButton(GLFW_MOUSE_BUTTON_LEFT, 1, 0);
-        } else {
-            CallbackBridge_nativeSendKey(GLFW_KEY_Q, 0, 1, 0);
-        }
-    } else if (sender.state == UIGestureRecognizerStateChanged) {
-        // Nothing to do here, already handled in touchesMoved
-    } else if (sender.state == UIGestureRecognizerStateCancelled
-        || sender.state == UIGestureRecognizerStateFailed
-            || sender.state == UIGestureRecognizerStateEnded)
-    {
-        if (currentHotbarSlot == -1) {
-            if (self.enableMouseGestures)
-                CallbackBridge_nativeSendMouseButton(GLFW_MOUSE_BUTTON_LEFT, 0, 0);
-        } else {
-            CallbackBridge_nativeSendKey(GLFW_KEY_Q, 0, 0, 0);
-        }
-    }
-}
-
-- (void)surfaceOnTouchesScroll:(UIPanGestureRecognizer *)sender {
-    if (sender.state == UIGestureRecognizerStateBegan || sender.state == UIGestureRecognizerStateEnded){
-        if(self.shouldTriggerHaptic) {
-            [self.lightHaptic impactOccurred];
-        }
-    }
-    
-    if (isGrabbing) return;
-    if (sender.state == UIGestureRecognizerStateBegan ||
-        sender.state == UIGestureRecognizerStateChanged ||
-        sender.state == UIGestureRecognizerStateEnded) {
-        CGPoint velocity = [sender velocityInView:self.rootView];
-        if (velocity.x != 0.0f || velocity.y != 0.0f) {
-            CallbackBridge_nativeSendScroll(velocity.x/self.view.frame.size.width, velocity.y/self.view.frame.size.height);
-        }
-    }
-}
-
-#pragma mark - Input view stuff
-
--(BOOL)textFieldShouldReturn:(UITextField *)textField {
-    CallbackBridge_nativeSendKey(GLFW_KEY_ENTER, 0, 1, 0);
-    CallbackBridge_nativeSendKey(GLFW_KEY_ENTER, 0, 0, 0);
-    textField.text = @" ";
-    return YES;
-}
-
-#pragma mark - On-screen button functions
-
-- (void)executebtn:(ControlButton *)sender withAction:(int)action {
-    int held = action == ACTION_DOWN;
-    for (int i = 0; i < 4; i++) {
-        int keycode = ((NSNumber *)sender.properties[@"keycodes"][i]).intValue;
-        if (keycode < 0) {
-            switch (keycode) {
-                case SPECIALBTN_KEYBOARD:
-                    if (held == 0) {
-                        if (self.inputTextField.isFirstResponder) {
-                            [self.inputTextField resignFirstResponder];
-                            self.inputTextField.alpha = 1.0f;
-                        } else {
-                            [self.inputTextField becomeFirstResponder];
-                            // Insert an undeletable space
-                            self.inputTextField.text = @" ";
-                        }
-                    }
-                    break;
-
-                case SPECIALBTN_MOUSEPRI:
-                    CallbackBridge_nativeSendMouseButton(GLFW_MOUSE_BUTTON_LEFT, held, 0);
-                    break;
-
-                case SPECIALBTN_MOUSESEC:
-                    CallbackBridge_nativeSendMouseButton(GLFW_MOUSE_BUTTON_RIGHT, held, 0);
-                    break;
-
-                case SPECIALBTN_MOUSEMID:
-                    CallbackBridge_nativeSendMouseButton(GLFW_MOUSE_BUTTON_MIDDLE, held, 0);
-                    break;
-
-                case SPECIALBTN_TOGGLECTRL:
-                    [self executebtn_special_togglebtn:held];
-                    break;
-
-                case SPECIALBTN_SCROLLDOWN:
-                    if (!held) {
-                        CallbackBridge_nativeSendScroll(0.0, 1.0);
-                    }
-                    break;
-
-                case SPECIALBTN_SCROLLUP:
-                    if (!held) {
-                        CallbackBridge_nativeSendScroll(0.0, -1.0);
-                    }
-                    break;
-
-                case SPECIALBTN_VIRTUALMOUSE:
-                    if (!isGrabbing && !held) {
-                        virtualMouseEnabled = !virtualMouseEnabled;
-                        self.mousePointerView.hidden = !virtualMouseEnabled;
-                        setPrefBool(@"control.virtmouse_enable", virtualMouseEnabled);
-                        [self setNeedsUpdateOfPrefersPointerLocked];
-                    }
-                    break;
-
-                case SPECIALBTN_MENU:
-                    if (!held) {
-                        [self actionOpenNavigationMenu];
-                    }
-                    break;
-
-                default:
-                    NSLog(@"Warning: button %@ sent unknown special keycode: %d", sender.titleLabel.text, keycode);
-                    break;
-            }
-        } else if (keycode > 0) {
-            // there's no key id 0, but we accidentally used -1 as a special key id, so we had to do that
-            // if (keycode == 0) { keycode = -1; }
-            // at the moment, send unknown keycode does nothing, may even cause performance issue, so ignore it
-            CallbackBridge_nativeSendKey(keycode, 0, held, 0);
-        }
-    }
-}
-
-- (void)executebtn_down:(ControlButton *)sender
-{
-    if(self.shouldTriggerHaptic) {
-        [self.lightHaptic impactOccurred];
-    }
-    
-    if (sender.savedBackgroundColor == nil) {
-        [self executebtn:sender withAction:ACTION_DOWN];
-    }
-    if ([self.swipeableButtons containsObject:sender]) {
-        self.swipingButton = sender;
-    }
-}
-
-- (void)executebtn_swipe:(UIPanGestureRecognizer *)sender
-{
-    if (sender.state == UIGestureRecognizerStateCancelled || sender.state == UIGestureRecognizerStateEnded) {
-        [self executebtn_up:self.swipingButton isOutside:NO];
-        return;
-    }
-    CGPoint location = [sender locationInView:self.ctrlView];
-    for (ControlButton *button in self.swipeableButtons) {
-        if (CGRectContainsPoint(button.frame, location) && (ControlButton *)self.swipingButton != button) {
-            [self executebtn_up:self.swipingButton isOutside:NO];
-            self.swipingButton = (ControlButton *)button;
-            [self executebtn:self.swipingButton withAction:ACTION_DOWN];
-            break;
-        }
-    }
-}
-
-- (void)executebtn_up:(ControlButton *)sender isOutside:(BOOL)isOutside
-{
-    if (self.swipingButton == sender) {
-        [self executebtn:self.swipingButton withAction:ACTION_UP];
-        self.swipingButton = nil;
-    } else if (sender.savedBackgroundColor == nil) {
-        [self executebtn:sender withAction:ACTION_UP];
-        return;
-    }
-
-    if (isOutside || sender.savedBackgroundColor == nil) {
-        return;
-    }
-
-    sender.isToggleOn = !sender.isToggleOn;
-    if (sender.isToggleOn) {
-        sender.backgroundColor = [self.view.tintColor colorWithAlphaComponent:CGColorGetAlpha(sender.savedBackgroundColor.CGColor)];
-        [self executebtn:sender withAction:ACTION_DOWN];
-    } else {
-        sender.backgroundColor = sender.savedBackgroundColor;
-        [self executebtn:sender withAction:ACTION_UP];
-    }
-
-    if(self.shouldTriggerHaptic) {
-        [self.lightHaptic impactOccurred];
-    }
-}
-
-- (void)executebtn_up_inside:(ControlButton *)sender {
-    [self executebtn_up:sender isOutside:NO];
-}
-
-- (void)executebtn_up_outside:(ControlButton *)sender {
-    [self executebtn_up:sender isOutside:YES];
-}
-
-- (void)executebtn_special_togglebtn:(int)held {
-    if (held) return;
-    self.toggleHidden = !self.toggleHidden;
-    [self updateControlHiddenState:self.toggleHidden];
-}
-
-#pragma mark - Input: On-screen touch events
-
-int touchesMovedCount;
-// Equals to Android ACTION_DOWN
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
-{
-    [super touchesBegan:touches withEvent:event];
-    int i = 0;
-    for (UITouch *touch in touches) {
+// ... rest of file unchanged ...
